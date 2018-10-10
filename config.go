@@ -159,7 +159,8 @@ type torConfig struct {
 }
 
 type spiderConfig struct {
-	Active		bool	`long:"active" description:"Enable SPIDER payment network"`
+	Active         bool `long:"active" description:"Enable Spider payment network"`
+	EnableBalQuery bool `long:"enablebalquery" description:"Allow Spider nodes to query channel balances and respond"`
 }
 
 // config defines the configuration options for lnd.
@@ -314,9 +315,8 @@ func loadConfig() (*config, error) {
 			DNS:     defaultTorDNS,
 			Control: defaultTorControl,
 		},
-		Spider: &spiderConfig{
-		},
-		net: &tor.ClearNet{},
+		Spider: &spiderConfig{},
+		net:    &tor.ClearNet{},
 	}
 
 	// Pre-parse the command line options to pick up an alternative config
@@ -530,7 +530,10 @@ func loadConfig() (*config, error) {
 	}
 
 	if cfg.Spider.Active {
-		fmt.Println("SPIDER is enabled")
+		fmt.Println("Spider is enabled")
+	} else if cfg.Spider.EnableBalQuery {
+		return nil, errors.New("Balance Query cannot be enabled without " +
+			"Spider being enabled")
 	}
 
 	if cfg.DisableListen && cfg.NAT {
