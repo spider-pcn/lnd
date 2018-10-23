@@ -26,34 +26,35 @@ type MessageType uint16
 // The currently defined message types within this current version of the
 // Lightning protocol.
 const (
-	MsgInit                    MessageType = 16
-	MsgError                               = 17
-	MsgPing                                = 18
-	MsgPong                                = 19
-	MsgOpenChannel                         = 32
-	MsgAcceptChannel                       = 33
-	MsgFundingCreated                      = 34
-	MsgFundingSigned                       = 35
-	MsgFundingLocked                       = 36
-	MsgShutdown                            = 38
-	MsgClosingSigned                       = 39
-	MsgUpdateAddHTLC                       = 128
-	MsgUpdateFulfillHTLC                   = 130
-	MsgUpdateFailHTLC                      = 131
-	MsgCommitSig                           = 132
-	MsgRevokeAndAck                        = 133
-	MsgUpdateFee                           = 134
-	MsgUpdateFailMalformedHTLC             = 135
-	MsgChannelReestablish                  = 136
-	MsgChannelAnnouncement                 = 256
-	MsgNodeAnnouncement                    = 257
-	MsgChannelUpdate                       = 258
-	MsgAnnounceSignatures                  = 259
-	MsgQueryShortChanIDs                   = 261
-	MsgReplyShortChanIDsEnd                = 262
-	MsgQueryChannelRange                   = 263
-	MsgReplyChannelRange                   = 264
-	MsgGossipTimestampRange                = 265
+	MsgInit                      MessageType = 16
+	MsgError                                 = 17
+	MsgPing                                  = 18
+	MsgPong                                  = 19
+	MsgOpenChannel                           = 32
+	MsgAcceptChannel                         = 33
+	MsgFundingCreated                        = 34
+	MsgFundingSigned                         = 35
+	MsgFundingLocked                         = 36
+	MsgShutdown                              = 38
+	MsgClosingSigned                         = 39
+	MsgUpdateAddHTLC                         = 128
+	MsgUpdateFulfillHTLC                     = 130
+	MsgUpdateFailHTLC                        = 131
+	MsgCommitSig                             = 132
+	MsgRevokeAndAck                          = 133
+	MsgUpdateFee                             = 134
+	MsgUpdateFailMalformedHTLC               = 135
+	MsgChannelReestablish                    = 136
+	MsgChannelAnnouncement                   = 256
+	MsgNodeAnnouncement                      = 257
+	MsgChannelUpdate                         = 258
+	MsgAnnounceSignatures                    = 259
+	MsgQueryShortChanIDs                     = 261
+	MsgReplyShortChanIDsEnd                  = 262
+	MsgQueryChannelRange                     = 263
+	MsgReplyChannelRange                     = 264
+	MsgGossipTimestampRange                  = 265
+	MsgProbeRouteChannelBalances             = 266
 )
 
 // String return the string representation of message type.
@@ -115,6 +116,8 @@ func (t MessageType) String() string {
 		return "ReplyChannelRange"
 	case MsgGossipTimestampRange:
 		return "GossipTimestampRange"
+	case MsgProbeRouteChannelBalances:
+		return "ProbeRouteChannelBalances"
 	default:
 		return "<unknown>"
 	}
@@ -216,6 +219,8 @@ func makeEmptyMessage(msgType MessageType) (Message, error) {
 		msg = &ReplyChannelRange{}
 	case MsgGossipTimestampRange:
 		msg = &GossipTimestampRange{}
+	case MsgProbeRouteChannelBalances:
+		msg = &ProbeRouteChannelBalances{}
 	default:
 		return nil, &UnknownMessage{msgType}
 	}
