@@ -1006,82 +1006,84 @@ func (s *server) Start() error {
 // if this node is the sender, needs to process the balance information and send
 // it back to whoever initiated it
 func (s *server) respondToProbe(msg *lnwire.ProbeRouteChannelBalances) {
-	newMsg := msg
-	nextHop := selfNode.PubKeyBytes[:]
-
 	if msg.ProbeCompleted {
 		if msg.HopNum+1 < len(msg.Route) {
-			newMsg, nextHop = respondToCompletedProbe(msg)
+			s.RespondToCompletedProbe(msg)
 		} else {
 			// probe finished propagating - idk what the sender does
 			// the sender should be waiting on this result technically
 			// TODO:
-			probeChannel <- msg
+			//probeChannel <- msg
 
 		}
 	} else {
 		if msg.HopNum+1 < len(msg.Route) {
-			newMsg, nextHop = respondToProbeInProgress(msg)
+			s.RespondToProbeInProgress(msg)
 		} else {
-			newMsg, nextHop = convertProbeToCompletedProbe(msg)
+			s.ConvertProbeToCompletedProbe(msg)
 		}
 	}
 
 	// send message to nextHop
-	sendToPeer(newMsg, nextHop)
+	//s.SendToPeer(nextHop, newMsg)
 }
 
 // respondToProbeInProgress is a helper function to respond to probes
 // which haven't gone all the way to the receiver yet, and are in the middle
 // of the path. This finds the balance on the outgoing channel
 // and appends it to map in the message itself
-func respondToProbeInProgress(msg *lnwire.ProbeRouteChannelBalances) {
+func (s *server) RespondToProbeInProgress(msg *lnwire.ProbeRouteChannelBalances) {
 	nextHop := msg.Route[msg.HopNum+1]
 
 	// find the balance on this channel
-	//TODO
-	cid := lnwire.NewChanIDFromOutPoint(&edge.ChannelPoint)
-	link, err := s.htlcSwitch.GetLink(cid)
+	var nextChannelBalance lnwire.MilliSatoshi
+	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
+	link := links[0] //TODO: check this @vibhaa
+
 	if err != nil {
 		// If the link isn't online, then we'll report
 		// that it has zero bandwidth to the router.
 		nextChannelBalance = 0
-	}
-
-	// If the link is found within the switch, but it isn't
-	// yet eligible to forward any HTLCs, then we'll treat
-	// it as if it isn't online in the first place.
-	if !link.EligibleToForward() {
+	} else if !link.EligibleToForward() {
+		// If the link is found within the switch, but it isn't
+		// yet eligible to forward any HTLCs, then we'll treat
+		// it as if it isn't online in the first place.
 		nextChannelBalance = 0
+	} else {
+		// Otherwise, we'll return the current best estimate
+		// for the available bandwidth for the link.
+		nextChannelBalance = link.Bandwidth()
 	}
-
-	// Otherwise, we'll return the current best estimate
-	// for the available bandwidth for the link.
-	nextChannelBalance = link.Bandwidth()
-	msg.RouterChannelBalMap[currentNode] = nextChannelBalance
+	msg.RouterChannelBalMap[msg.CurrentNode] = nextChannelBalance
 
 	// create the message to send to next hop
-	nextHop = msg.Route[msg.HopNum+1]
+	//nextHop = msg.Route[msg.HopNum+1]
 	msg.CurrentNode = nextHop
 	msg.HopNum += 1
 
-	return msg, nextHop
+	link.Peer().SendMessage(false, msg)
 }
 
 // respondToCompletedProbe is a helper function to respond to a completed probe
 // that hasn't gone all the way to the sender yet,
-func respondToCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
+func (s *server) RespondToCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
 	// create the message to send to next hop
-	nextHop = msg.Route[msg.HopNum+1]
+	nextHop := msg.Route[msg.HopNum+1]
 	msg.CurrentNode = nextHop
 	msg.HopNum += 1
 
-	return msg, nextHop
+	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
+	link := links[0] //TODO: check this @vibhaa
+
+	if err == nil {
+		link.Peer().SendMessage(false, msg)
+	}
+	//return msg, nextHop
 }
 
 // convertProbeToCompletedProbe is a helper function to flip the direction of the probe
 // and mark it completed once the receiver has seen the probe
-func convertProbeToCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
+func (s *server) ConvertProbeToCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
 	reversedRoute := msg.Route
 	for i := len(reversedRoute)/2 - 1; i >= 0; i-- {
 		opp := len(reversedRoute) - 1 - i
@@ -1091,10 +1093,15 @@ func convertProbeToCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
 	msg.ProbeCompleted = true
 
 	msg.HopNum = 1
-	nextHop = msg.Route[msg.HopNum]
+	nextHop := msg.Route[msg.HopNum]
 	msg.CurrentNode = nextHop
 
-	return msg, nextHop
+	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
+	link := links[0] //TODO: check this @vibhaa
+
+	if err == nil {
+		link.Peer().SendMessage(false, msg)
+	}
 }
 
 // Stop gracefully shutsdown the main daemon server. This function will signal

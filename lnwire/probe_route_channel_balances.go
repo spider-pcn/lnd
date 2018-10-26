@@ -1,6 +1,10 @@
 package lnwire
 
-import ()
+import "io"
+
+// Vertex is a simple alias for the serialization of a compressed Bitcoin
+// public key.
+type Vertex [33]byte
 
 // ProbeRouteChannelBalances is a message sent by a node in order to query the balance on a set of channels
 // specified by the route on the probe message. The receiving node adds the balance on the channel between
@@ -9,7 +13,7 @@ import ()
 type ProbeRouteChannelBalances struct {
 	// Route is the route for which we are probing the bandwidth
 	// denoted by a slice of public keys of the nodes on the route
-	Route []ChannelHop
+	Route []Vertex
 
 	// HopNum denotes where in the probe we are and is helpful to directly
 	// find the Next Hop
@@ -18,7 +22,7 @@ type ProbeRouteChannelBalances struct {
 	// routerChannelBalMap maps a router to the balance on the outgoing
 	// channel to the next hop as specified by the router
 	// this is filled as the probe message propagates
-	RouterChannelBalMap map[Vertex]uint64
+	RouterChannelBalMap map[Vertex]MilliSatoshi
 
 	// sender denotes the sender of the probe message; used to send the information
 	// back to the sender after it is filled
@@ -28,6 +32,10 @@ type ProbeRouteChannelBalances struct {
 	// channels along the path has been collected
 	// if true the probe is on its way back to the sender
 	ProbeCompleted bool
+
+	// CurrentNode denotes the current Node in the path that the probe is traversing
+	// CurrentNode = Route[HopNum]
+	CurrentNode Vertex
 }
 
 // NewProbeRouteChannelBalances creates a new empty ProbeRouteChannelBalances message
@@ -46,8 +54,11 @@ var _ Message = (*ProbeRouteChannelBalances)(nil)
 func (q *ProbeRouteChannelBalances) Decode(r io.Reader, pver uint32) error {
 	return readElements(r,
 		q.Route[:],
-		q.RouterChannelBalMap,
+		&q.HopNum,
+		&q.RouterChannelBalMap,
 		&q.Sender,
+		&q.ProbeCompleted,
+		&q.CurrentNode,
 	)
 }
 
@@ -58,8 +69,11 @@ func (q *ProbeRouteChannelBalances) Decode(r io.Reader, pver uint32) error {
 func (q *ProbeRouteChannelBalances) Encode(w io.Writer, pver uint32) error {
 	return writeElements(w,
 		q.Route[:],
+		q.HopNum,
 		q.RouterChannelBalMap,
 		q.Sender,
+		q.ProbeCompleted,
+		q.CurrentNode,
 	)
 }
 
