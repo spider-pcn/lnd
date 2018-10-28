@@ -1734,6 +1734,52 @@ func (r *ChannelRouter) SendToRoute(routes []*Route,
 	return r.sendPayment(payment, paySession)
 }
 
+// SendToShortestPath attempts to send a payment as described within the
+// passed LightningPayment through the shortest path returned by
+// paySession.RequestRoute. This function is blocking and will return 
+// either: when the payment is successful, or all routes
+// have been attempted and resulted in a failed payment. If the payment
+// succeeds, then a non-nil Route will be returned which describes the
+// path the successful payment traversed within the network to reach the
+// destination. Additionally, the payment preimage will also be returned.
+func (r *ChannelRouter) SendToShortestPath(payment *LightningPayment) ([32]byte, *Route, error) {
+	// create a dummy paymentSession to find shortest path
+	dummyPaySession, err := r.missionControl.NewPaymentSession(
+		payment.RouteHints, payment.Target,
+	)
+	if err != nil {
+		return [32]byte{}, nil, err
+	}
+
+	// calculate CLTV delta
+	var finalCLTVDelta uint16
+	if payment.FinalCLTVDelta == nil {
+		finalCLTVDelta = DefaultFinalCLTVDelta
+	} else {
+		finalCLTVDelta = *payment.FinalCLTVDelta
+	}
+
+	// fetch the current block height
+	_, currentHeight, err := r.cfg.Chain.GetBestBlock()
+	if err != nil {
+		return [32]byte{}, nil, err
+	}
+
+	// get optimal route
+	route, err := dummyPaySession.RequestRoute(
+		payment, uint32(currentHeight), finalCLTVDelta,
+	)
+	if err != nil {
+		// If we're unable to find a route, return error
+		return [32]byte{}, nil, fmt.Errorf("unable to "+
+			"route payment to destination: %v",
+			err)
+	}
+
+	// call SendToRoute to actually send the payment
+	return r.SendToRoute([]*Route{route}, payment)
+}
+
 // sendPayment attempts to send a payment as described within the passed
 // LightningPayment. This function is blocking and will return either: when the
 // payment is successful, or all candidates routes have been attempted and
