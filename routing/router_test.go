@@ -920,9 +920,9 @@ func TestSendPaymentErrorPathPruning(t *testing.T) {
 	}
 }
 
-// TestSendToShortestPathSucceed checks that the function picks the shortest path and use it
+// TestSendSpiderShortestPathSucceed checks that the function picks the shortest path and use it
 // to send payment
-func TestSendToShortestPathSucceed(t *testing.T) {
+func TestSendSpiderShortestPathSucceed(t *testing.T) {
 	t.Parallel()
 
 	const startingBlockHeight = 101
@@ -955,7 +955,7 @@ func TestSendToShortestPathSucceed(t *testing.T) {
 
 	// Send off the payment request to the router. Direct to luo ji should have
 	// been selected, and the payment should succeed.
-	paymentPreImage, route, err := ctx.router.SendToShortestPath(&payment)
+	paymentPreImage, route, err := ctx.router.SendSpider(&payment, shortestPath)
 	if err != nil {
 		t.Fatalf("unable to send payment: %v", err)
 	} else {
@@ -981,9 +981,9 @@ func TestSendToShortestPathSucceed(t *testing.T) {
 	}
 }
 
-// TestSendToShortestPathFailAtBrokenShortestPath checks that the payment will fail if
+// TestSendSpiderShortestPathFail checks that the payment will fail if
 // the shortest path is broken
-func TestSendToShortestPathFailAtBrokenShortestPath(t *testing.T) {
+func TestSendSpiderShortestPathFail(t *testing.T) {
 	t.Parallel()
 
 	const startingBlockHeight = 101
@@ -1035,7 +1035,7 @@ func TestSendToShortestPathFailAtBrokenShortestPath(t *testing.T) {
 	// Send off the payment request to the router. Direct to luo ji should have
 	// been selected. Since we manually broke that channel, this payment should
 	// fail.
-	_, _, err = ctx.router.SendToShortestPath(&payment)
+	_, _, err = ctx.router.SendSpider(&payment, shortestPath)
 	if err == nil {
 		t.Fatalf("payment should have failed")
 	} else {
