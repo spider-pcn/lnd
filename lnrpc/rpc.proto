@@ -717,6 +717,8 @@ message SendRequest {
     send the payment.
     */
     FeeLimit fee_limit = 8;
+
+    int32 spiderAlgo = 9;
 }
 message SendResponse {
     string payment_error = 1 [json_name = "payment_error"];
