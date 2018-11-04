@@ -34,6 +34,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -3642,6 +3643,704 @@ func testMultiHopPayments(net *lntest.NetworkHarness, t *harnessTest) {
 	closeChannelAndAssert(ctxt, t, net, dave, chanPointDave, false)
 	ctxt, _ = context.WithTimeout(ctxb, timeout)
 	closeChannelAndAssert(ctxt, t, net, carol, chanPointCarol, false)
+}
+
+func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
+
+	// As we'll be querying the channels  state frequently we'll
+	// create a closure helper function for the purpose.
+	getChanInfo := func(node *lntest.HarnessNode) (*lnrpc.Channel, error) {
+		req := &lnrpc.ListChannelsRequest{}
+		channelInfo, err := node.ListChannels(ctxb, req)
+		if err != nil {
+			return nil, err
+		}
+		if len(channelInfo.Channels) != 1 {
+			t.Fatalf("node should only have a single channel, "+
+				"instead he has %v",
+				len(channelInfo.Channels))
+		}
+
+		return channelInfo.Channels[0], nil
+	}
+	
+	const chanAmt = btcutil.Amount(200000)
+	const pushAmt = btcutil.Amount(100000)
+	ctxb := context.Background()
+	timeout := time.Duration(time.Second * 15)
+	var networkChans []*lnrpc.ChannelPoint
+
+	// As preliminary setup, we'll create two new nodes: Carol and Dave,
+	// such that we now have a 4 ndoe, 3 channel topology. Dave will make
+	// a channel with Alice, and Carol with Dave. After this setup, the
+	// network topology should now look like:
+	//     Carol -> Dave -> Alice -> Bob
+	//
+	// First, we'll create Dave and establish a channel to Alice.
+
+	// create the topology as used in the Spider paper
+	// first, we create the nodes.
+	n1, err := net.NewNode("1", nil)
+	if err != nil {
+		t.Fatalf("unable to create new nodes: %v", err)
+	}
+	n2, err := net.NewNode("2", nil)
+	if err != nil {
+		t.Fatalf("unable to create new nodes: %v", err)
+	}
+	n3, err := net.NewNode("3", nil)
+	if err != nil {
+		t.Fatalf("unable to create new nodes: %v", err)
+	}
+	n4, err := net.NewNode("4", nil)
+	if err != nil {
+		t.Fatalf("unable to create new nodes: %v", err)
+	}
+	n5, err := net.NewNode("5", nil)
+	if err != nil {
+		t.Fatalf("unable to create new nodes: %v", err)
+	}
+
+	defer shutdownAndAssert(net, t, n1)
+	defer shutdownAndAssert(net, t, n2)
+	defer shutdownAndAssert(net, t, n3)
+	defer shutdownAndAssert(net, t, n4)
+	defer shutdownAndAssert(net, t, n5)
+
+	// connect nodes together
+	if err := net.ConnectNodes(ctxb, n1, n2); err != nil {
+		t.Fatalf("unable to connect n1 to n2: %v", err)
+	}
+	if err := net.ConnectNodes(ctxb, n2, n3); err != nil {
+		t.Fatalf("unable to connect n2 to n3: %v", err)
+	}
+	if err := net.ConnectNodes(ctxb, n3, n4); err != nil {
+		t.Fatalf("unable to connect n3 to n4: %v", err)
+	}
+	if err := net.ConnectNodes(ctxb, n4, n5); err != nil {
+		t.Fatalf("unable to connect n4 to n5: %v", err)
+	}
+	if err := net.ConnectNodes(ctxb, n5, n1); err != nil {
+		t.Fatalf("unable to connect n5 to n1: %v", err)
+	}
+	if err := net.ConnectNodes(ctxb, n2, n4); err != nil {
+		t.Fatalf("unable to connect n2 to n4: %v", err)
+	}
+
+	// send nodes initial funds
+	err = net.SendCoins(ctxb, btcutil.SatoshiPerBitcoin, n1)
+	if err != nil {
+		t.Fatalf("unable to send coins to n1: %v", err)
+	}
+	err = net.SendCoins(ctxb, btcutil.SatoshiPerBitcoin, n2)
+	if err != nil {
+		t.Fatalf("unable to send coins to n2: %v", err)
+	}
+	err = net.SendCoins(ctxb, btcutil.SatoshiPerBitcoin, n3)
+	if err != nil {
+		t.Fatalf("unable to send coins to n3: %v", err)
+	}
+	err = net.SendCoins(ctxb, btcutil.SatoshiPerBitcoin, n4)
+	if err != nil {
+		t.Fatalf("unable to send coins to n4: %v", err)
+	}
+	err = net.SendCoins(ctxb, btcutil.SatoshiPerBitcoin, n5)
+	if err != nil {
+		t.Fatalf("unable to send coins to n5: %v", err)
+	}
+
+	ctxt, _ = context.WithTimeout(ctxb, timeout)
+	chanPointn1n2 := openChannelAndAssert(
+		ctxt, t, net, n1, n2,
+		lntest.OpenChannelParams{
+			Amt: chanAmt,
+			PushAmt: pushAmt
+		},
+	)
+	networkChans = append(networkChans, chanPointn1n2)
+	txidHash, err = getChanPointFundingTxid(chanPointn1n2)
+	if err != nil {
+		t.Fatalf("unable to get txid: %v", err)
+	}
+	n1n2ChanTXID, err := chainhash.NewHash(txidHash)
+	if err != nil {
+		t.Fatalf("unable to create sha hash: %v", err)
+	}
+	n1n2FundPoint := wire.OutPoint{
+		Hash:  *n1n2ChanTXID,
+		Index: chanPointn1n2.OutputIndex,
+	}
+
+	ctxt, _ = context.WithTimeout(ctxb, timeout)
+	chanPointn2n3 := openChannelAndAssert(
+		ctxt, t, net, n2, n3,
+		lntest.OpenChannelParams{
+			Amt: chanAmt,
+			PushAmt: pushAmt
+		},
+	)
+	networkChans = append(networkChans, chanPointn2n3)
+	txidHash, err = getChanPointFundingTxid(chanPointn2n3)
+	if err != nil {
+		t.Fatalf("unable to get txid: %v", err)
+	}
+	n2n3ChanTXID, err := chainhash.NewHash(txidHash)
+	if err != nil {
+		t.Fatalf("unable to create sha hash: %v", err)
+	}
+	n2n3FundPoint := wire.OutPoint{
+		Hash:  *n2n3ChanTXID,
+		Index: chanPointn2n3.OutputIndex,
+	}
+
+	ctxt, _ = context.WithTimeout(ctxb, timeout)
+	chanPointn3n4 := openChannelAndAssert(
+		ctxt, t, net, n3, n4,
+		lntest.OpenChannelParams{
+			Amt: chanAmt,
+			PushAmt: pushAmt
+		},
+	)
+	networkChans = append(networkChans, chanPointn3n4)
+	txidHash, err = getChanPointFundingTxid(chanPointn3n4)
+	if err != nil {
+		t.Fatalf("unable to get txid: %v", err)
+	}
+	n3n4ChanTXID, err := chainhash.NewHash(txidHash)
+	if err != nil {
+		t.Fatalf("unable to create sha hash: %v", err)
+	}
+	n3n4FundPoint := wire.OutPoint{
+		Hash:  *n3n4ChanTXID,
+		Index: chanPointn3n4.OutputIndex,
+	}
+
+	ctxt, _ = context.WithTimeout(ctxb, timeout)
+	chanPointn4n5 := openChannelAndAssert(
+		ctxt, t, net, n4, n5,
+		lntest.OpenChannelParams{
+			Amt: chanAmt,
+			PushAmt: pushAmt
+		},
+	)
+	networkChans = append(networkChans, chanPointn4n5)
+	txidHash, err = getChanPointFundingTxid(chanPointn4n5)
+	if err != nil {
+		t.Fatalf("unable to get txid: %v", err)
+	}
+	n4n5ChanTXID, err := chainhash.NewHash(txidHash)
+	if err != nil {
+		t.Fatalf("unable to create sha hash: %v", err)
+	}
+	n4n5FundPoint := wire.OutPoint{
+		Hash:  *n4n5ChanTXID,
+		Index: chanPointn4n5.OutputIndex,
+	}
+
+	ctxt, _ = context.WithTimeout(ctxb, timeout)
+	chanPointn5n1 := openChannelAndAssert(
+		ctxt, t, net, n5, n1,
+		lntest.OpenChannelParams{
+			Amt: chanAmt,
+			PushAmt: pushAmt
+		},
+	)
+	networkChans = append(networkChans, chanPointn5n1)
+	txidHash, err = getChanPointFundingTxid(chanPointn5n1)
+	if err != nil {
+		t.Fatalf("unable to get txid: %v", err)
+	}
+	n5n1ChanTXID, err := chainhash.NewHash(txidHash)
+	if err != nil {
+		t.Fatalf("unable to create sha hash: %v", err)
+	}
+	n5n1FundPoint := wire.OutPoint{
+		Hash:  *n5n1ChanTXID,
+		Index: chanPointn5n1.OutputIndex,
+	}
+
+	ctxt, _ = context.WithTimeout(ctxb, timeout)
+	chanPointn2n4 := openChannelAndAssert(
+		ctxt, t, net, n2, n4,
+		lntest.OpenChannelParams{
+			Amt: chanAmt,
+			PushAmt: pushAmt
+		},
+	)
+	networkChans = append(networkChans, chanPointn2n4)
+	txidHash, err = getChanPointFundingTxid(chanPointn2n4)
+	if err != nil {
+		t.Fatalf("unable to get txid: %v", err)
+	}
+	n2n4ChanTXID, err := chainhash.NewHash(txidHash)
+	if err != nil {
+		t.Fatalf("unable to create sha hash: %v", err)
+	}
+	n2n4FundPoint := wire.OutPoint{
+		Hash:  *n2n4ChanTXID,
+		Index: chanPointn2n4.OutputIndex,
+	}
+
+	// Wait for all nodes to have seen all channels.
+	nodes := []*lntest.HarnessNode{n1, n2, n3, n4, n5}
+	nodeNames := []string{"n1", "n2", "n3", "n4", "n5"}
+	for _, chanPoint := range networkChans {
+		for i, node := range nodes {
+			txidHash, err := getChanPointFundingTxid(chanPoint)
+			if err != nil {
+				t.Fatalf("unable to get txid: %v", err)
+			}
+			txid, e := chainhash.NewHash(txidHash)
+			if e != nil {
+				t.Fatalf("unable to create sha hash: %v", e)
+			}
+			point := wire.OutPoint{
+				Hash:  *txid,
+				Index: chanPoint.OutputIndex,
+			}
+
+			ctxt, _ = context.WithTimeout(ctxb, timeout)
+			err = node.WaitForNetworkChannelOpen(ctxt, chanPoint)
+			if err != nil {
+				t.Fatalf("%s(%d): timeout waiting for "+
+					"channel(%s) open: %v", nodeNames[i],
+					node.NodeID, point, err)
+			}
+		}
+	}
+
+	// Initialize seed random in order to generate invoices.
+	prand.Seed(time.Now().UnixNano())
+
+	// create invoices. n1n5reqs means that n1 should pay n5 (n1 -> n5)
+	const numInvoices = 3
+	const paymentAmt = 100
+
+	n1n5reqs := make([]string, numInvoices)
+	n1n2reqs := make([]string, numInvoices)
+	n2n4reqs := make([]string, numInvoices)
+	n3n2reqs := make([]string, numInvoices)
+	n3n5reqs := make([]string, numInvoices)
+	n4n1reqs := make([]string, numInvoices)
+	n4n3reqs := make([]string, numInvoices)
+	n5n3reqs := make([]string, numInvoices)
+
+	for i := 0; i < numInvoices; i++ {
+		preimage := make([]byte, 32)
+		_, err := rand.Read(preimage)
+		if err != nil {
+			t.Fatalf("unable to generate preimage: %v", err)
+		}
+
+		invoice := &lnrpc.Invoice{
+			Memo:      "testing",
+			RPreimage: preimage,
+			Value:     paymentAmt,
+		}
+		resp, err := n5.AddInvoice(ctxb, invoice)
+		if err != nil {
+			t.Fatalf("unable to add invoice: %v", err)
+		}
+
+		n1n5reqs[i] = resp.PaymentRequest
+	}
+
+	for i := 0; i < numInvoices; i++ {
+		preimage := make([]byte, 32)
+		_, err := rand.Read(preimage)
+		if err != nil {
+			t.Fatalf("unable to generate preimage: %v", err)
+		}
+
+		invoice := &lnrpc.Invoice{
+			Memo:      "testing",
+			RPreimage: preimage,
+			Value:     paymentAmt,
+		}
+		resp, err := n2.AddInvoice(ctxb, invoice)
+		if err != nil {
+			t.Fatalf("unable to add invoice: %v", err)
+		}
+
+		n1n2reqs[i] = resp.PaymentRequest
+	}
+
+	for i := 0; i < numInvoices; i++ {
+		preimage := make([]byte, 32)
+		_, err := rand.Read(preimage)
+		if err != nil {
+			t.Fatalf("unable to generate preimage: %v", err)
+		}
+
+		invoice := &lnrpc.Invoice{
+			Memo:      "testing",
+			RPreimage: preimage,
+			Value:     paymentAmt * 2,
+		}
+		resp, err := n4.AddInvoice(ctxb, invoice)
+		if err != nil {
+			t.Fatalf("unable to add invoice: %v", err)
+		}
+
+		n2n4reqs[i] = resp.PaymentRequest
+	}
+
+	for i := 0; i < numInvoices; i++ {
+		preimage := make([]byte, 32)
+		_, err := rand.Read(preimage)
+		if err != nil {
+			t.Fatalf("unable to generate preimage: %v", err)
+		}
+
+		invoice := &lnrpc.Invoice{
+			Memo:      "testing",
+			RPreimage: preimage,
+			Value:     paymentAmt,
+		}
+		resp, err := n2.AddInvoice(ctxb, invoice)
+		if err != nil {
+			t.Fatalf("unable to add invoice: %v", err)
+		}
+
+		n3n2reqs[i] = resp.PaymentRequest
+	}
+
+	for i := 0; i < numInvoices; i++ {
+		preimage := make([]byte, 32)
+		_, err := rand.Read(preimage)
+		if err != nil {
+			t.Fatalf("unable to generate preimage: %v", err)
+		}
+
+		invoice := &lnrpc.Invoice{
+			Memo:      "testing",
+			RPreimage: preimage,
+			Value:     paymentAmt * 2,
+		}
+		resp, err := n5.AddInvoice(ctxb, invoice)
+		if err != nil {
+			t.Fatalf("unable to add invoice: %v", err)
+		}
+
+		n3n5reqs[i] = resp.PaymentRequest
+	}
+
+	for i := 0; i < numInvoices; i++ {
+		preimage := make([]byte, 32)
+		_, err := rand.Read(preimage)
+		if err != nil {
+			t.Fatalf("unable to generate preimage: %v", err)
+		}
+
+		invoice := &lnrpc.Invoice{
+			Memo:      "testing",
+			RPreimage: preimage,
+			Value:     paymentAmt * 2,
+		}
+		resp, err := n1.AddInvoice(ctxb, invoice)
+		if err != nil {
+			t.Fatalf("unable to add invoice: %v", err)
+		}
+
+		n4n1reqs[i] = resp.PaymentRequest
+	}
+
+	for i := 0; i < numInvoices; i++ {
+		preimage := make([]byte, 32)
+		_, err := rand.Read(preimage)
+		if err != nil {
+			t.Fatalf("unable to generate preimage: %v", err)
+		}
+
+		invoice := &lnrpc.Invoice{
+			Memo:      "testing",
+			RPreimage: preimage,
+			Value:     paymentAmt * 2,
+		}
+		resp, err := n3.AddInvoice(ctxb, invoice)
+		if err != nil {
+			t.Fatalf("unable to add invoice: %v", err)
+		}
+
+		n4n3reqs[i] = resp.PaymentRequest
+	}
+
+	for i := 0; i < numInvoices; i++ {
+		preimage := make([]byte, 32)
+		_, err := rand.Read(preimage)
+		if err != nil {
+			t.Fatalf("unable to generate preimage: %v", err)
+		}
+
+		invoice := &lnrpc.Invoice{
+			Memo:      "testing",
+			RPreimage: preimage,
+			Value:     paymentAmt,
+		}
+		resp, err := n3.AddInvoice(ctxb, invoice)
+		if err != nil {
+			t.Fatalf("unable to add invoice: %v", err)
+		}
+
+		n5n3reqs[i] = resp.PaymentRequest
+	}
+
+	// TODO: Wait for nodes to receive the channel edge from the funding manager.
+	/*
+	ctxt, _ = context.WithTimeout(ctxb, timeout)
+	if err = n1.WaitForNetworkChannelOpen(ctxt, chanPoint); err != nil {
+		t.Fatalf("alice didn't see the alice->bob channel before "+
+			"timeout: %v", err)
+	}
+	if err = net.Bob.WaitForNetworkChannelOpen(ctxt, chanPoint); err != nil {
+		t.Fatalf("bob didn't see the bob->alice channel before "+
+			"timeout: %v", err)
+	}
+	*/
+
+	// Open up a payment streams to each node, that we'll use to
+	// send payment between nodes.
+	n1PayStream, err := n1.SendPayment(ctxb)
+	if err != nil {
+		t.Fatalf("unable to create payment stream for n1: %v", err)
+	}
+	n2PayStream, err := n2.SendPayment(ctxb)
+	if err != nil {
+		t.Fatalf("unable to create payment stream for n2: %v", err)
+	}
+	n3PayStream, err := n3.SendPayment(ctxb)
+	if err != nil {
+		t.Fatalf("unable to create payment stream for n3: %v", err)
+	}
+	n4PayStream, err := n4.SendPayment(ctxb)
+	if err != nil {
+		t.Fatalf("unable to create payment stream for n4: %v", err)
+	}
+	n5PayStream, err := n5.SendPayment(ctxb)
+	if err != nil {
+		t.Fatalf("unable to create payment stream for n5: %v", err)
+	}
+	
+	// Send payments from Alice to Bob and from Bob to Alice in async
+	// manner.
+	for i := 0; i < numInvoices; i++ {
+		n1n5SendReq := &lnrpc.SendRequest{
+			PaymentRequest: n1n5reqs[i],
+			SpiderAlgo: routing.shortestPath
+		}
+		n1n2SendReq := &lnrpc.SendRequest{
+			PaymentRequest: n1n2reqs[i],
+			SpiderAlgo: routing.shortestPath
+		}
+		n2n4SendReq := &lnrpc.SendRequest{
+			PaymentRequest: n2n4reqs[i],
+			SpiderAlgo: routing.shortestPath
+		}
+		n3n2SendReq := &lnrpc.SendRequest{
+			PaymentRequest: n3n2reqs[i],
+			SpiderAlgo: routing.shortestPath
+		}
+		n3n5SendReq := &lnrpc.SendRequest{
+			PaymentRequest: n3n5reqs[i],
+			SpiderAlgo: routing.shortestPath
+		}
+		n4n1SendReq := &lnrpc.SendRequest{
+			PaymentRequest: n4n1reqs[i],
+			SpiderAlgo: routing.shortestPath
+		}
+		n4n3SendReq := &lnrpc.SendRequest{
+			PaymentRequest: n4n3reqs[i],
+			SpiderAlgo: routing.shortestPath
+		}
+		n5n3SendReq := &lnrpc.SendRequest{
+			PaymentRequest: n5n3reqs[i],
+			SpiderAlgo: routing.shortestPath
+		}
+
+		if err := n1PayStream.Send(n1n5SendReq); err != nil {
+			t.Fatalf("unable to send payment: "+
+				"%v", err)
+		}
+		if err := n1PayStream.Send(n1n2SendReq); err != nil {
+			t.Fatalf("unable to send payment: "+
+				"%v", err)
+		}
+		if err := n2PayStream.Send(n2n4SendReq); err != nil {
+			t.Fatalf("unable to send payment: "+
+				"%v", err)
+		}
+		if err := n3PayStream.Send(n3n2SendReq); err != nil {
+			t.Fatalf("unable to send payment: "+
+				"%v", err)
+		}
+		if err := n3PayStream.Send(n3n5SendReq); err != nil {
+			t.Fatalf("unable to send payment: "+
+				"%v", err)
+		}
+		if err := n4PayStream.Send(n4n1SendReq); err != nil {
+			t.Fatalf("unable to send payment: "+
+				"%v", err)
+		}
+		if err := n4PayStream.Send(n4n3SendReq); err != nil {
+			t.Fatalf("unable to send payment: "+
+				"%v", err)
+		}
+		if err := n5PayStream.Send(n5n3SendReq); err != nil {
+			t.Fatalf("unable to send payment: "+
+				"%v", err)
+		}
+	}
+
+	errChan := make(chan error)
+	go func() {
+		for i := 0; i < numInvoices * 2; i++ {
+			if resp, err := n1PayStream.Recv(); err != nil {
+				errChan <- errors.Errorf("payment stream has"+
+					" been closed: %v", err)
+				return
+			} else if resp.PaymentError != "" {
+				errChan <- errors.Errorf("unable to send "+
+					"payment from n1: %v",
+					resp.PaymentError)
+				return
+			}
+		}
+		errChan <- nil
+	}()
+
+	go func() {
+		for i := 0; i < numInvoices; i++ {
+			if resp, err := n2PayStream.Recv(); err != nil {
+				errChan <- errors.Errorf("payment stream has"+
+					" been closed: %v", err)
+				return
+			} else if resp.PaymentError != "" {
+				errChan <- errors.Errorf("unable to send "+
+					"payment from n2: %v",
+					resp.PaymentError)
+				return
+			}
+		}
+		errChan <- nil
+	}()
+
+	go func() {
+		for i := 0; i < numInvoices * 2; i++ {
+			if resp, err := n3PayStream.Recv(); err != nil {
+				errChan <- errors.Errorf("payment stream has"+
+					" been closed: %v", err)
+				return
+			} else if resp.PaymentError != "" {
+				errChan <- errors.Errorf("unable to send "+
+					"payment from n3: %v",
+					resp.PaymentError)
+				return
+			}
+		}
+		errChan <- nil
+	}()
+
+	go func() {
+		for i := 0; i < numInvoices * 2; i++ {
+			if resp, err := n4PayStream.Recv(); err != nil {
+				errChan <- errors.Errorf("payment stream has"+
+					" been closed: %v", err)
+				return
+			} else if resp.PaymentError != "" {
+				errChan <- errors.Errorf("unable to send "+
+					"payment from n4: %v",
+					resp.PaymentError)
+				return
+			}
+		}
+		errChan <- nil
+	}()
+
+	go func() {
+		for i := 0; i < numInvoices; i++ {
+			if resp, err := n5PayStream.Recv(); err != nil {
+				errChan <- errors.Errorf("payment stream has"+
+					" been closed: %v", err)
+				return
+			} else if resp.PaymentError != "" {
+				errChan <- errors.Errorf("unable to send "+
+					"payment from n5: %v",
+					resp.PaymentError)
+				return
+			}
+		}
+		errChan <- nil
+	}()
+
+	// Wait for each node receive their payments, and throw and error
+	// if something goes wrong.
+	maxTime := 60 * time.Second
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-errChan:
+			if err != nil {
+				t.Fatalf(err.Error())
+			}
+		case <-time.After(maxTime):
+			t.Fatalf("waiting for payments to finish too long "+
+				"(%v)", maxTime)
+		}
+	}
+
+	// TODO
+	/*
+	// Wait for Alice and Bob to receive revocations messages, and update
+	// states, i.e. balance info.
+	time.Sleep(1 * time.Second)
+
+	aliceInfo, err := getChanInfo(net.Alice)
+	if err != nil {
+		t.Fatalf("unable to get bob's channel info: %v", err)
+	}
+	if aliceInfo.RemoteBalance != bobAmt {
+		t.Fatalf("alice's remote balance is incorrect, got %v, "+
+			"expected %v", aliceInfo.RemoteBalance, bobAmt)
+	}
+	if aliceInfo.LocalBalance != aliceAmt {
+		t.Fatalf("alice's local balance is incorrect, got %v, "+
+			"expected %v", aliceInfo.LocalBalance, aliceAmt)
+	}
+	if len(aliceInfo.PendingHtlcs) != 0 {
+		t.Fatalf("alice's pending htlcs is incorrect, got %v, "+
+			"expected %v", len(aliceInfo.PendingHtlcs), 0)
+	}
+
+	// Next query for Bob's and Alice's channel states, in order to confirm
+	// that all payment have been successful transmitted.
+	bobInfo, err := getChanInfo(net.Bob)
+	if err != nil {
+		t.Fatalf("unable to get bob's channel info: %v", err)
+	}
+
+	if bobInfo.LocalBalance != bobAmt {
+		t.Fatalf("bob's local balance is incorrect, got %v, expected"+
+			" %v", bobInfo.LocalBalance, bobAmt)
+	}
+	if bobInfo.RemoteBalance != aliceAmt {
+		t.Fatalf("bob's remote balance is incorrect, got %v, "+
+			"expected %v", bobInfo.RemoteBalance, aliceAmt)
+	}
+	if len(bobInfo.PendingHtlcs) != 0 {
+		t.Fatalf("bob's pending htlcs is incorrect, got %v, "+
+			"expected %v", len(bobInfo.PendingHtlcs), 0)
+	}
+	*/
+
+	// Finally, immediately close the channel. This function will also
+	// block until the channel is closed and will additionally assert the
+	// relevant channel closing post conditions.
+	ctxt, _ = context.WithTimeout(ctxb, timeout)
+	closeChannelAndAssert(ctxt, t, net, n1, chanPointn1n2, false)
+	closeChannelAndAssert(ctxt, t, net, n2, chanPointn2n3, false)
+	closeChannelAndAssert(ctxt, t, net, n3, chanPointn3n4, false)
+	closeChannelAndAssert(ctxt, t, net, n4, chanPointn4n5, false)
+	closeChannelAndAssert(ctxt, t, net, n5, chanPointn5n1, false)
+	closeChannelAndAssert(ctxt, t, net, n2, chanPointn2n4, false)
 }
 
 // testSingleHopSendToRoute tests that payments are properly processed
