@@ -38,9 +38,9 @@ const (
 	defaultPayAttemptTimeout = time.Duration(time.Second * 60)
 )
 
-type SpiderRoutingAlgo int
 const (
-	shortestPath SpiderRoutingAlgo = iota
+	off = iota
+	shortestPath = iota
 )
 
 var (
@@ -1748,10 +1748,10 @@ payment *LightningPayment) ([32]byte, *Route, error) {
 // succeeds, then a non-nil Route will be returned which describes the
 // path the successful payment traversed within the network to reach the
 // destination. Additionally, the payment preimage will also be returned.
-func (r *ChannelRouter) SendSpider(payment *LightningPayment, routingAlgo SpiderRoutingAlgo) ([32]byte, *Route, error) {
+func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([32]byte, *Route, error) {
 
 	var route *Route
-	switch routingAlgo {
+	switch spiderAlgo {
 	case shortestPath:
 		// create a dummy paymentSession to find shortest path
 		dummyPaySession, err := r.missionControl.NewPaymentSession(

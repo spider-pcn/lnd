@@ -1971,6 +1971,8 @@ type rpcPaymentIntent struct {
 	routeHints [][]routing.HopHint
 
 	routes []*routing.Route
+
+	spiderAlgo int
 }
 
 // extractPaymentIntent attempts to parse the complete details required to
@@ -2046,6 +2048,7 @@ func extractPaymentIntent(rpcPayReq *rpcPaymentRequest) (rpcPaymentIntent, error
 		payIntent.dest = payReq.Destination
 		payIntent.cltvDelta = uint16(payReq.MinFinalCLTVExpiry())
 		payIntent.routeHints = payReq.RouteHints
+		payIntent.spiderAlgo = int(rpcPayReq.SpiderAlgo)
 
 		return payIntent, nil
 	}
@@ -2164,9 +2167,13 @@ func (r *rpcServer) dispatchPaymentIntent(
 			payment.FinalCLTVDelta = &payIntent.cltvDelta
 		}
 
-		preImage, route, routerErr = r.server.chanRouter.SendPayment(
-			payment,
-		)
+		if payIntent.spiderAlgo != 0 {
+			preImage, route, routerErr = r.server.chanRouter.SendSpider(
+				payment, payIntent.spiderAlgo)
+		} else {
+			preImage, route, routerErr = r.server.chanRouter.SendPayment(
+				payment)
+		}
 	} else {
 		payment := &routing.LightningPayment{
 			PaymentHash: payIntent.rHash,
