@@ -955,7 +955,7 @@ func TestSendSpiderShortestPathSucceed(t *testing.T) {
 
 	// Send off the payment request to the router. Direct to luo ji should have
 	// been selected, and the payment should succeed.
-	paymentPreImage, route, err := ctx.router.SendSpider(&payment, shortestPath)
+	paymentPreImage, route, err := ctx.router.SendSpider(&payment, ShortestPath)
 	if err != nil {
 		t.Fatalf("unable to send payment: %v", err)
 	} else {
@@ -1035,7 +1035,7 @@ func TestSendSpiderShortestPathFail(t *testing.T) {
 	// Send off the payment request to the router. Direct to luo ji should have
 	// been selected. Since we manually broke that channel, this payment should
 	// fail.
-	_, _, err = ctx.router.SendSpider(&payment, shortestPath)
+	_, _, err = ctx.router.SendSpider(&payment, ShortestPath)
 	if err == nil {
 		t.Fatalf("payment should have failed")
 	} else {
