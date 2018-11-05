@@ -3760,7 +3760,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	prand.Seed(time.Now().UnixNano())
 
 	// create invoices
-	const numInvoices = 100000000
+	const numInvoices = 10
 	const paymentAmt = 100
 
 	invoices := [][]string{}
@@ -3833,7 +3833,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	errChan := make(chan error)
 	for i := 0; i < numPayIntents; i++ {
-		go func() {
+		go func(i int) {
 			for j := 0; j < numInvoices; j++ {
 				if resp, err := payStreams[payIntents[i][0]].Recv(); err != nil {
 					errChan <- errors.Errorf("payment stream has"+
@@ -3848,7 +3848,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 				}
 			}
 			errChan <- nil
-		}()
+		}(i)
 	}
 	
 	// Wait for each node receive their payments, and throw and error
