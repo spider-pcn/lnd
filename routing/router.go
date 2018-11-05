@@ -38,7 +38,7 @@ const (
 
 const (
 	off = iota
-	shortestPath = iota
+	ShortestPath = iota
 )
 
 var (
@@ -1624,7 +1624,7 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 
 	var route *Route
 	switch spiderAlgo {
-	case shortestPath:
+	case ShortestPath:
 		// create a dummy paymentSession to find shortest path
 		dummyPaySession, err := r.missionControl.NewPaymentSession(
 			payment.RouteHints, payment.Target,

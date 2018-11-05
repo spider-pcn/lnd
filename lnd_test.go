@@ -3646,40 +3646,23 @@ func testMultiHopPayments(net *lntest.NetworkHarness, t *harnessTest) {
 }
 
 func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
+	ctxb := context.Background()
 
 	// As we'll be querying the channels state frequently we'll
 	// create a closure helper function for the purpose.
-	/*
-	// this is not useful here. since we have multiple channels originating/going
-	// to the same node. This function only returns the first channel of a node.
-	getChanInfo := func(node *lntest.HarnessNode) (*lnrpc.Channel, error) {
+	/*getChanInfo := func(node *lntest.HarnessNode) ([]*lnrpc.Channel, error) {
 		req := &lnrpc.ListChannelsRequest{}
 		channelInfo, err := node.ListChannels(ctxb, req)
 		if err != nil {
 			return nil, err
 		}
-		if len(channelInfo.Channels) != 1 {
-			t.Fatalf("node should only have a single channel, "+
-				"instead he has %v",
-				len(channelInfo.Channels))
-		}
-
-		return channelInfo.Channels[0], nil
-	}
-	*/
+		return channelInfo.Channels, nil
+	}*/
 	
 	const chanAmt = btcutil.Amount(200000)
 	const pushAmt = btcutil.Amount(100000)
-	ctxb := context.Background()
+	
 	timeout := time.Duration(time.Second * 15)
-
-	// As preliminary setup, we'll create two new nodes: Carol and Dave,
-	// such that we now have a 4 ndoe, 3 channel topology. Dave will make
-	// a channel with Alice, and Carol with Dave. After this setup, the
-	// network topology should now look like:
-	//     Carol -> Dave -> Alice -> Bob
-	//
-	// First, we'll create Dave and establish a channel to Alice.
 
 	// create the topology as used in the Spider paper
 	// first, we create the nodes.
@@ -3695,7 +3678,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	payRates := []int{1, 1, 2, 1, 2, 2, 2, 1}
 
 	for i := 0; i < numNodes; i++ {
-		nodes[i], err := net.NewNode(nodeNames[i], nil)
+		nd, err := net.NewNode(nodeNames[i], nil)
+		nodes[i] = nd
 		if err != nil {
 			t.Fatalf("unable to create new node: %v", err)
 		}
@@ -3712,7 +3696,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	// send nodes initial funds
 	for i := 0; i < numNodes; i++ {
-		err = net.SendCoins(ctxb, btcutil.SatoshiPerBitcoin, nodes[i])
+		err := net.SendCoins(ctxb, btcutil.SatoshiPerBitcoin, nodes[i])
 		if err != nil {
 			t.Fatalf("unable to send coins to %v: %v", nodeNames[i], err)
 		}
@@ -3724,23 +3708,23 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	chanFundPoints := make([]*wire.OutPoint, numChannels)
 
 	for i, conn := range connections {
-		ctxt, _ = context.WithTimeout(ctxb, timeout)
-		chanPoints[i] := openChannelAndAssert(
+		ctxt, _ := context.WithTimeout(ctxb, timeout)
+		chanPoints[i] = openChannelAndAssert(
 			ctxt, t, net, nodes[conn[0]], nodes[conn[1]],
 			lntest.OpenChannelParams{
 				Amt: chanAmt,
-				PushAmt: pushAmt
+				PushAmt: pushAmt,
 			},
 		)
-		txidHash, err = getChanPointFundingTxid(chanPoints[i])
+		txidHash, err := getChanPointFundingTxid(chanPoints[i])
 		if err != nil {
 			t.Fatalf("unable to get txid: %v", err)
 		}
-		chanTXIDs[i], err := chainhash.NewHash(txidHash)
+		chanTXIDs[i], err = chainhash.NewHash(txidHash)
 		if err != nil {
 			t.Fatalf("unable to create sha hash: %v", err)
 		}
-		chanFundPoints[i] := wire.OutPoint{
+		chanFundPoints[i] = &wire.OutPoint{
 			Hash:  *chanTXIDs[i],
 			Index: chanPoints[i].OutputIndex,
 		}
@@ -3762,7 +3746,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 				Index: chanPoint.OutputIndex,
 			}
 
-			ctxt, _ = context.WithTimeout(ctxb, timeout)
+			ctxt, _ := context.WithTimeout(ctxb, timeout)
 			err = node.WaitForNetworkChannelOpen(ctxt, chanPoint)
 			if err != nil {
 				t.Fatalf("%s(%d): timeout waiting for "+
@@ -3776,10 +3760,10 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	prand.Seed(time.Now().UnixNano())
 
 	// create invoices
-	const numInvoices = 3
+	const numInvoices = 100000000
 	const paymentAmt = 100
 
-	invoices := [][]string
+	invoices := [][]string{}
 
 	for i := 0; i < numPayIntents; i++ {
 		invoices = append(invoices, make([]string, numInvoices))
@@ -3793,7 +3777,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			invoice := &lnrpc.Invoice{
 				Memo:      "testing",
 				RPreimage: preimage,
-				Value:     paymentAmt * payRates[i],
+				Value:     int64(paymentAmt * payRates[i]),
 			}
 			resp, err := nodes[payIntents[i][1]].AddInvoice(ctxb, invoice)
 			if err != nil {
@@ -3805,17 +3789,17 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	}
 
 	// TODO: Wait for nodes to receive the channel edge from the funding manager.
-	ctxt, _ = context.WithTimeout(ctxb, timeout)
+	ctxt, _ := context.WithTimeout(ctxb, timeout)
 	for i := 0; i < numChannels; i++ {
-		if err = nodes[channels[i][0]].WaitForNetworkChannelOpen(ctxt, chanPoints[i]); err != nil {
+		if err := nodes[connections[i][0]].WaitForNetworkChannelOpen(ctxt, chanPoints[i]); err != nil {
 			t.Fatalf("%v didn't see the %v->%v channel before "+
-				"timeout: %v", nodeNames[channels[i][0]], 
-				nodeNames[channels[i][0]], nodeNames[channels[i][1]], err)
+				"timeout: %v", nodeNames[connections[i][0]], 
+				nodeNames[connections[i][0]], nodeNames[connections[i][1]], err)
 		}
-		if err = nodes[channels[i][1]].WaitForNetworkChannelOpen(ctxt, chanPoints[i]); err != nil {
+		if err := nodes[connections[i][1]].WaitForNetworkChannelOpen(ctxt, chanPoints[i]); err != nil {
 			t.Fatalf("%v didn't see the %v->%v channel before "+
-				"timeout: %v", nodeNames[channels[i][1]], 
-				nodeNames[channels[i][1]], nodeNames[channels[i][0]], err)
+				"timeout: %v", nodeNames[connections[i][1]], 
+				nodeNames[connections[i][1]], nodeNames[connections[i][0]], err)
 		}
 	}
 	
@@ -3826,7 +3810,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	payStreams := make([]lnrpc.Lightning_SendPaymentClient, numNodes)
 
 	for i := 0; i < numNodes; i++ {
-		payStreams[i], err := nodes[i].SendPayment(ctxb)
+		ps, err := nodes[i].SendPayment(ctxb)
+		payStreams[i] = ps
 		if err != nil {
 			t.Fatalf("unable to create payment stream for %v: %v", nodeNames[i], err)
 		}
@@ -3837,7 +3822,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		for j := 0; j < numPayIntents; j++ {
 			sendReq := &lnrpc.SendRequest{
 				PaymentRequest: invoices[j][i],
-				SpiderAlgo: routing.shortestPath
+				SpiderAlgo: routing.ShortestPath,
 			}
 			if err := payStreams[payIntents[j][0]].Send(sendReq); err != nil {
 				t.Fatalf("unable to send payment: "+
@@ -3881,7 +3866,6 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		}
 	}
 
-	// TODO
 	/*
 	// Wait for Alice and Bob to receive revocations messages, and update
 	// states, i.e. balance info.
@@ -12305,6 +12289,10 @@ type testCase struct {
 }
 
 var testsCases = []*testCase{
+	{
+		name: "test spider routing",
+		test: testSpiderShortestPath,
+	},
 	{
 		name: "onchain fund recovery",
 		test: testOnchainFundRecovery,
