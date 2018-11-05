@@ -3760,13 +3760,13 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	prand.Seed(time.Now().UnixNano())
 
 	// create invoices
-	const numInvoices = 10
+	const numInvoices = 2
 	const paymentAmt = 100
 
-	invoices := [][]string{}
+	invoices := make([][]string, numPayIntents)
 
 	for i := 0; i < numPayIntents; i++ {
-		invoices = append(invoices, make([]string, numInvoices))
+		invoices[i] = make([]string, numInvoices)
 		for j := 0; j < numInvoices; j++ {
 			preimage := make([]byte, 32)
 			_, err := rand.Read(preimage)
@@ -3783,8 +3783,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			if err != nil {
 				t.Fatalf("unable to add invoice: %v", err)
 			}
-
-			invoices[i] = append(invoices[i], resp.PaymentRequest)
+			invoices[i][j] = resp.PaymentRequest
 		}
 	}
 
@@ -3816,7 +3815,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			t.Fatalf("unable to create payment stream for %v: %v", nodeNames[i], err)
 		}
 	}
-	
+
 	// send payments
 	for i := 0; i < numInvoices; i++ {
 		for j := 0; j < numPayIntents; j++ {
