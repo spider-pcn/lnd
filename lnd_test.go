@@ -3664,7 +3664,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	const pushAmt = btcutil.Amount(100000)
 
 	baseFee := int64(0)
-	feeRate := int64(1)
+	feeRate := 0.000001
 	
 	timeout := time.Duration(time.Second * 15)
 
@@ -3784,7 +3784,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	expectedPolicy := &lnrpc.RoutingPolicy{
 		FeeBaseMsat:      baseFee,
-		FeeRateMilliMsat: feeRate * testFeeBase,
+		FeeRateMilliMsat: int64(feeRate * testFeeBase),
 		TimeLockDelta:    timeLockDelta,
 		MinHtlc:          1000, // default value
 	}
