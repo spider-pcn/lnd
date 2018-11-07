@@ -3670,20 +3670,20 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	// create the topology as used in the Spider paper
 	// first, we create the nodes.
-	numNodes := 5
-	nodes := make([]*lntest.HarnessNode, 5)
-	nodeNames := []string{"1", "2", "3", "4", "5"}
+	numNodes := 2
+	nodes := make([]*lntest.HarnessNode, numNodes)
+	nodeNames := []string{"1", "2"}
 
-	numChannels := 6
-	connections := [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 1}, {1, 3}}
+	numChannels := 1
+	connections := [][]int{{0, 1}}
 
-	numPayIntents := 8
-	payIntents := [][]int{{0, 1}, {0, 4}, {1, 3}, {2, 1}, {2, 4}, {3, 0}, {3, 2}, {4, 2}}
-	payRates := []int{1, 1, 2, 1, 2, 2, 2, 1}
+	numPayIntents := 2
+	payIntents := [][]int{{0, 1}, {1, 0}}
+	payRates := []int{1, 1}
 
-	const baseRate = 2	// num of payments per second
+	const baseRate = 30	// num of payments per second
 	const paymentAmt = 5000	
-	const testTime = 10		// seconds
+	const testTime = 10	// seconds
 
 	for i := 0; i < numNodes; i++ {
 		nd, err := net.NewNode(nodeNames[i], nil)
@@ -3826,6 +3826,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	// Initialize seed random in order to generate invoices.
 	prand.Seed(time.Now().UnixNano())
 	var wg sync.WaitGroup
+	var tranwg sync.WaitGroup
 	wg.Add(numPayIntents)
 	var succeededPays uint64
 	var failedPays uint64
@@ -3841,42 +3842,47 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 				case <-timeout:
 					return
 				case <-tick:
-					// generate invoice and add to target node
-					preimage := make([]byte, 32)
-					_, err := rand.Read(preimage)
-					if err != nil {
-						t.Fatalf("unable to generate preimage: %v", err)
-					}
-					invoiceReq := &lnrpc.Invoice{
-						Memo:      "testing",
-						RPreimage: preimage,
-						Value:     int64(paymentAmt),
-					}
-					resp, err := nodes[payIntents[i][1]].AddInvoice(ctxb, invoiceReq)
-					if err != nil {
-						t.Fatalf("unable to add invoice: %v", err)
-					}
+					go func(i int) {
+						tranwg.Add(1)
+						defer tranwg.Done()
+						// generate invoice and add to target node
+						preimage := make([]byte, 32)
+						_, err := rand.Read(preimage)
+						if err != nil {
+							t.Fatalf("unable to generate preimage: %v", err)
+						}
+						invoiceReq := &lnrpc.Invoice{
+							Memo:      "testing",
+							RPreimage: preimage,
+							Value:     int64(paymentAmt),
+						}
+						resp, err := nodes[payIntents[i][1]].AddInvoice(ctxb, invoiceReq)
+						if err != nil {
+							t.Fatalf("unable to add invoice: %v", err)
+						}
 
-					invoice := resp.PaymentRequest
-					sendReq := &lnrpc.SendRequest{
-						PaymentRequest: invoice,
-						SpiderAlgo: routing.ShortestPath,
-					}
-					payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
-					if err != nil {
-						atomic.AddUint64(&failedPays, 1)
-					} else {
-						if payresp.PaymentError != "" {
+						invoice := resp.PaymentRequest
+						sendReq := &lnrpc.SendRequest{
+							PaymentRequest: invoice,
+							SpiderAlgo: routing.ShortestPath,
+						}
+						payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
+						if err != nil {
 							atomic.AddUint64(&failedPays, 1)
 						} else {
-							atomic.AddUint64(&succeededPays, 1)
+							if payresp.PaymentError != "" {
+								atomic.AddUint64(&failedPays, 1)
+							} else {
+								atomic.AddUint64(&succeededPays, 1)
+							}
 						}
-					}
+					}(i)
 				}
 			}
 		}(i)
 	}
 	wg.Wait()
+	tranwg.Wait()
 
 	succeeded := atomic.LoadUint64(&succeededPays)
 	failed := atomic.LoadUint64(&failedPays)
