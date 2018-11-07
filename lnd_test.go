@@ -3670,20 +3670,20 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	// create the topology as used in the Spider paper
 	// first, we create the nodes.
-	numNodes := 2
+	numNodes := 5
 	nodes := make([]*lntest.HarnessNode, numNodes)
-	nodeNames := []string{"1", "2"}
+	nodeNames := []string{"1", "2", "3", "4", "5"}
 
-	numChannels := 1
-	connections := [][]int{{0, 1}}
+	numChannels := 6
+	connections := [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 1}, {1, 3}}
 
-	numPayIntents := 2
-	payIntents := [][]int{{0, 1}, {1, 0}}
-	payRates := []int{2, 1}
+	numPayIntents := 8
+	payIntents := [][]int{{0, 1}, {0, 4}, {1, 3}, {2, 1}, {2, 4}, {3, 0}, {3, 2}, {4, 2}}
+	payRates := []int{1, 1, 2, 1, 2, 2, 2, 1}
 
-	const baseRate = 30	// num of payments per second
+	const baseRate = 2	// num of payments per second
 	const paymentAmt = 5000	
-	const testTime = 10	// seconds
+	const testTime = 60	// seconds
 
 	for i := 0; i < numNodes; i++ {
 		nd, err := net.NewNode(nodeNames[i], nil)
@@ -3722,6 +3722,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			lntest.OpenChannelParams{
 				Amt: chanAmt,
 				PushAmt: pushAmt,
+				MinHtlc: 0,
 			},
 		)
 		txidHash, err := getChanPointFundingTxid(chanPoints[i])
@@ -3786,7 +3787,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		FeeBaseMsat:      baseFee,
 		FeeRateMilliMsat: int64(feeRate * testFeeBase),
 		TimeLockDelta:    timeLockDelta,
-		MinHtlc:          1000, // default value
+		MinHtlc:          0, // we set it to zero
 	}
 
 	graphSubs := make([]graphSubscription, numNodes)
@@ -3796,10 +3797,12 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		defer close(graphSubs[i].quit)
 	}
 
-	expectedMessages := make([]expectedChanUpdate, numChannels)
+	expectedMessages := make([]expectedChanUpdate, numChannels * 2)
 	for i := 0; i < numChannels; i++ {
-		expectedMessages[i] = expectedChanUpdate{
+		expectedMessages[i * 2] = expectedChanUpdate{
 			nodes[connections[i][0]].PubKeyStr, expectedPolicy, chanPoints[i]}
+		expectedMessages[i * 2 + 1] = expectedChanUpdate{
+			nodes[connections[i][1]].PubKeyStr, expectedPolicy, chanPoints[i]}	
 	} 
 
 	for i := 0; i < numChannels; i++ {
@@ -3815,8 +3818,10 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		if _, err := nodes[connections[i][0]].UpdateChannelPolicy(ctxt, updateFeeReq); err != nil {
 			t.Fatalf("unable to update chan policy: %v", err)
 		}
+		if _, err := nodes[connections[i][1]].UpdateChannelPolicy(ctxt, updateFeeReq); err != nil {
+			t.Fatalf("unable to update chan policy: %v", err)
+		}
 	}
-		
 
 	// Wait for everyone to receive the channel update
 	for i := 0; i < numNodes; i++ {
