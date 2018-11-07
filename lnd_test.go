@@ -3679,7 +3679,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	numPayIntents := 2
 	payIntents := [][]int{{0, 1}, {1, 0}}
-	payRates := []int{1, 1}
+	payRates := []int{2, 1}
 
 	const baseRate = 30	// num of payments per second
 	const paymentAmt = 5000	

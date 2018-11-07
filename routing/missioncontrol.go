@@ -378,7 +378,7 @@ func (p *paymentSession) RequestRoute(payment *LightningPayment,
 	// Otherwise we actually need to perform path finding, so we'll obtain
 	// our current prune view snapshot. This view will only ever grow
 	// during the duration of this payment session, never shrinking.
-	pruneView := p.pruneViewSnapshot
+	pruneView := graphPruneView{}
 
 	log.Debugf("Mission Control session using prune view of %v "+
 		"edges, %v vertexes", len(pruneView.edges),
