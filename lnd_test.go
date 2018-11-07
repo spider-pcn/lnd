@@ -3664,7 +3664,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	const pushAmt = btcutil.Amount(100000)
 
 	baseFee := int64(0)
-	feeRate := 0.000001
+	feeRate := 0
 	
 	timeout := time.Duration(time.Second * 15)
 
@@ -3681,8 +3681,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	payIntents := [][]int{{0, 1}, {0, 4}, {1, 3}, {2, 1}, {2, 4}, {3, 0}, {3, 2}, {4, 2}}
 	payRates := []int{1, 1, 2, 1, 2, 2, 2, 1}
 
-	const baseRate = 100	// num of payments per second
-	const paymentAmt = 50000	
+	const baseRate = 2	// num of payments per second
+	const paymentAmt = 5000	
 	const testTime = 10		// seconds
 
 	for i := 0; i < numNodes; i++ {
