@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"sync"
 
 	"sync/atomic"
 
@@ -810,7 +811,6 @@ out:
 		select {
 		case graphUpdate := <-subscription.updateChan:
 			for _, update := range graphUpdate.ChannelUpdates {
-
 				// For each expected update, check if it matches
 				// the update we just received.
 				for i, exp := range expUpdates {
@@ -3658,10 +3658,14 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		}
 		return channelInfo.Channels, nil
 	}*/
-
+	
+	// Set channel sizes here. chanAmt sets the channel
 	const chanAmt = btcutil.Amount(200000)
 	const pushAmt = btcutil.Amount(100000)
 
+	baseFee := int64(0)
+	feeRate := int64(1)
+	
 	timeout := time.Duration(time.Second * 15)
 
 	// create the topology as used in the Spider paper
@@ -3676,6 +3680,10 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	numPayIntents := 8
 	payIntents := [][]int{{0, 1}, {0, 4}, {1, 3}, {2, 1}, {2, 4}, {3, 0}, {3, 2}, {4, 2}}
 	payRates := []int{1, 1, 2, 1, 2, 2, 2, 1}
+
+	const baseRate = 100	// num of payments per second
+	const paymentAmt = 50000	
+	const testTime = 10		// seconds
 
 	for i := 0; i < numNodes; i++ {
 		nd, err := net.NewNode(nodeNames[i], nil)
@@ -3712,7 +3720,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		chanPoints[i] = openChannelAndAssert(
 			ctxt, t, net, nodes[conn[0]], nodes[conn[1]],
 			lntest.OpenChannelParams{
-				Amt:     chanAmt,
+				Amt: chanAmt,
 				PushAmt: pushAmt,
 			},
 		)
@@ -3729,7 +3737,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			Index: chanPoints[i].OutputIndex,
 		}
 	}
-
+	
 	// Wait for all nodes to have seen all channels.
 	for _, chanPoint := range chanPoints {
 		for i, node := range nodes {
@@ -3756,155 +3764,166 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		}
 	}
 
-	// Initialize seed random in order to generate invoices.
-	prand.Seed(time.Now().UnixNano())
-
-	// create invoices
-	const numInvoices = 2
-	const paymentAmt = 100
-
-	invoices := make([][]string, numPayIntents)
-
-	for i := 0; i < numPayIntents; i++ {
-		invoices[i] = make([]string, numInvoices)
-		for j := 0; j < numInvoices; j++ {
-			preimage := make([]byte, 32)
-			_, err := rand.Read(preimage)
-			if err != nil {
-				t.Fatalf("unable to generate preimage: %v", err)
-			}
-
-			invoice := &lnrpc.Invoice{
-				Memo:      "testing",
-				RPreimage: preimage,
-				Value:     int64(paymentAmt * payRates[i]),
-			}
-			resp, err := nodes[payIntents[i][1]].AddInvoice(ctxb, invoice)
-			if err != nil {
-				t.Fatalf("unable to add invoice: %v", err)
-			}
-			invoices[i][j] = resp.PaymentRequest
-		}
-	}
-
-	// TODO: Wait for nodes to receive the channel edge from the funding manager.
+	// Wait for nodes to receive the channel edge from the funding manager.
 	ctxt, _ := context.WithTimeout(ctxb, timeout)
 	for i := 0; i < numChannels; i++ {
 		if err := nodes[connections[i][0]].WaitForNetworkChannelOpen(ctxt, chanPoints[i]); err != nil {
 			t.Fatalf("%v didn't see the %v->%v channel before "+
-				"timeout: %v", nodeNames[connections[i][0]],
+				"timeout: %v", nodeNames[connections[i][0]], 
 				nodeNames[connections[i][0]], nodeNames[connections[i][1]], err)
 		}
 		if err := nodes[connections[i][1]].WaitForNetworkChannelOpen(ctxt, chanPoints[i]); err != nil {
 			t.Fatalf("%v didn't see the %v->%v channel before "+
-				"timeout: %v", nodeNames[connections[i][1]],
+				"timeout: %v", nodeNames[connections[i][1]], 
 				nodeNames[connections[i][1]], nodeNames[connections[i][0]], err)
 		}
 	}
 
-	// Open up a payment streams to each node, that we'll use to
-	// send payment between nodes.
 
-	payStreams := make([]lnrpc.Lightning_SendPaymentClient, numNodes)
+	timeLockDelta := uint32(144)
 
+	expectedPolicy := &lnrpc.RoutingPolicy{
+		FeeBaseMsat:      baseFee,
+		FeeRateMilliMsat: feeRate * testFeeBase,
+		TimeLockDelta:    timeLockDelta,
+		MinHtlc:          1000, // default value
+	}
+
+	graphSubs := make([]graphSubscription, numNodes)
 	for i := 0; i < numNodes; i++ {
-		ps, err := nodes[i].SendPayment(ctxb)
-		payStreams[i] = ps
-		if err != nil {
-			t.Fatalf("unable to create payment stream for %v: %v", nodeNames[i], err)
-		}
+		ctxt, _ := context.WithTimeout(ctxb, timeout)
+		graphSubs[i] = subscribeGraphNotifications(t, ctxt, nodes[i])
+		defer close(graphSubs[i].quit)
 	}
 
-	// send payments
-	for i := 0; i < numInvoices; i++ {
-		for j := 0; j < numPayIntents; j++ {
-			sendReq := &lnrpc.SendRequest{
-				PaymentRequest: invoices[j][i],
-				SpiderAlgo:     routing.ShortestPath,
-			}
-			if err := payStreams[payIntents[j][0]].Send(sendReq); err != nil {
-				t.Fatalf("unable to send payment: "+
-					"%v", err)
-			}
+	expectedMessages := make([]expectedChanUpdate, numChannels)
+	for i := 0; i < numChannels; i++ {
+		expectedMessages[i] = expectedChanUpdate{
+			nodes[connections[i][0]].PubKeyStr, expectedPolicy, chanPoints[i]}
+	} 
+
+	for i := 0; i < numChannels; i++ {
+		ctxt, _ = context.WithTimeout(ctxb, timeout)
+		updateFeeReq := &lnrpc.PolicyUpdateRequest{
+			BaseFeeMsat:   baseFee,
+			FeeRate:       float64(feeRate),
+			TimeLockDelta: timeLockDelta,
+			Scope: &lnrpc.PolicyUpdateRequest_ChanPoint{
+				ChanPoint: chanPoints[i],
+			},
+		}
+		if _, err := nodes[connections[i][0]].UpdateChannelPolicy(ctxt, updateFeeReq); err != nil {
+			t.Fatalf("unable to update chan policy: %v", err)
 		}
 	}
+		
 
-	errChan := make(chan error)
+	// Wait for everyone to receive the channel update
+	for i := 0; i < numNodes; i++ {
+		waitForChannelUpdate(t, graphSubs[i], expectedMessages)
+	}
+
+	// Initialize seed random in order to generate invoices.
+	prand.Seed(time.Now().UnixNano())
+	var wg sync.WaitGroup
+	wg.Add(numPayIntents)
+	var succeededPays uint64
+	var failedPays uint64
+
 	for i := 0; i < numPayIntents; i++ {
 		go func(i int) {
-			for j := 0; j < numInvoices; j++ {
-				if resp, err := payStreams[payIntents[i][0]].Recv(); err != nil {
-					errChan <- errors.Errorf("payment stream has"+
-						" been closed: %v", err)
+			defer wg.Done()
+			timeToSleep := 1000000.0 / (baseRate * payRates[i])
+			timeout := time.After(time.Duration(testTime) * time.Second)
+			tick := time.Tick(time.Duration(timeToSleep) * time.Microsecond)
+			for {
+				select {
+				case <-timeout:
 					return
-				} else if resp.PaymentError != "" {
-					errChan <- errors.Errorf("unable to send "+
-						"payment from %v to %v: %v",
-						nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]],
-						resp.PaymentError)
-					return
+				case <-tick:
+					// generate invoice and add to target node
+					preimage := make([]byte, 32)
+					_, err := rand.Read(preimage)
+					if err != nil {
+						t.Fatalf("unable to generate preimage: %v", err)
+					}
+					invoiceReq := &lnrpc.Invoice{
+						Memo:      "testing",
+						RPreimage: preimage,
+						Value:     int64(paymentAmt),
+					}
+					resp, err := nodes[payIntents[i][1]].AddInvoice(ctxb, invoiceReq)
+					if err != nil {
+						t.Fatalf("unable to add invoice: %v", err)
+					}
+
+					invoice := resp.PaymentRequest
+					sendReq := &lnrpc.SendRequest{
+						PaymentRequest: invoice,
+						SpiderAlgo: routing.ShortestPath,
+					}
+					payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
+					if err != nil {
+						atomic.AddUint64(&failedPays, 1)
+					} else {
+						if payresp.PaymentError != "" {
+							atomic.AddUint64(&failedPays, 1)
+						} else {
+							atomic.AddUint64(&succeededPays, 1)
+						}
+					}
 				}
 			}
-			errChan <- nil
 		}(i)
 	}
+	wg.Wait()
 
-	// Wait for each node receive their payments, and throw and error
-	// if something goes wrong.
-	maxTime := 60 * time.Second
-	for i := 0; i < 2; i++ {
-		select {
-		case err := <-errChan:
-			if err != nil {
-				t.Fatalf(err.Error())
-			}
-		case <-time.After(maxTime):
-			t.Fatalf("waiting for payments to finish too long "+
-				"(%v)", maxTime)
-		}
-	}
+	succeeded := atomic.LoadUint64(&succeededPays)
+	failed := atomic.LoadUint64(&failedPays)
+	fmt.Printf("%v transactions performed in total, %v succeeded\n", succeeded + failed, succeeded)
+	fmt.Printf("Rate: %v\n", float64(succeeded) / float64(succeeded + failed))
 
 	/*
-		// Wait for Alice and Bob to receive revocations messages, and update
-		// states, i.e. balance info.
-		time.Sleep(1 * time.Second)
+	// Wait for Alice and Bob to receive revocations messages, and update
+	// states, i.e. balance info.
+	time.Sleep(1 * time.Second)
 
-		aliceInfo, err := getChanInfo(net.Alice)
-		if err != nil {
-			t.Fatalf("unable to get bob's channel info: %v", err)
-		}
-		if aliceInfo.RemoteBalance != bobAmt {
-			t.Fatalf("alice's remote balance is incorrect, got %v, "+
-				"expected %v", aliceInfo.RemoteBalance, bobAmt)
-		}
-		if aliceInfo.LocalBalance != aliceAmt {
-			t.Fatalf("alice's local balance is incorrect, got %v, "+
-				"expected %v", aliceInfo.LocalBalance, aliceAmt)
-		}
-		if len(aliceInfo.PendingHtlcs) != 0 {
-			t.Fatalf("alice's pending htlcs is incorrect, got %v, "+
-				"expected %v", len(aliceInfo.PendingHtlcs), 0)
-		}
+	aliceInfo, err := getChanInfo(net.Alice)
+	if err != nil {
+		t.Fatalf("unable to get bob's channel info: %v", err)
+	}
+	if aliceInfo.RemoteBalance != bobAmt {
+		t.Fatalf("alice's remote balance is incorrect, got %v, "+
+			"expected %v", aliceInfo.RemoteBalance, bobAmt)
+	}
+	if aliceInfo.LocalBalance != aliceAmt {
+		t.Fatalf("alice's local balance is incorrect, got %v, "+
+			"expected %v", aliceInfo.LocalBalance, aliceAmt)
+	}
+	if len(aliceInfo.PendingHtlcs) != 0 {
+		t.Fatalf("alice's pending htlcs is incorrect, got %v, "+
+			"expected %v", len(aliceInfo.PendingHtlcs), 0)
+	}
 
-		// Next query for Bob's and Alice's channel states, in order to confirm
-		// that all payment have been successful transmitted.
-		bobInfo, err := getChanInfo(net.Bob)
-		if err != nil {
-			t.Fatalf("unable to get bob's channel info: %v", err)
-		}
+	// Next query for Bob's and Alice's channel states, in order to confirm
+	// that all payment have been successful transmitted.
+	bobInfo, err := getChanInfo(net.Bob)
+	if err != nil {
+		t.Fatalf("unable to get bob's channel info: %v", err)
+	}
 
-		if bobInfo.LocalBalance != bobAmt {
-			t.Fatalf("bob's local balance is incorrect, got %v, expected"+
-				" %v", bobInfo.LocalBalance, bobAmt)
-		}
-		if bobInfo.RemoteBalance != aliceAmt {
-			t.Fatalf("bob's remote balance is incorrect, got %v, "+
-				"expected %v", bobInfo.RemoteBalance, aliceAmt)
-		}
-		if len(bobInfo.PendingHtlcs) != 0 {
-			t.Fatalf("bob's pending htlcs is incorrect, got %v, "+
-				"expected %v", len(bobInfo.PendingHtlcs), 0)
-		}
+	if bobInfo.LocalBalance != bobAmt {
+		t.Fatalf("bob's local balance is incorrect, got %v, expected"+
+			" %v", bobInfo.LocalBalance, bobAmt)
+	}
+	if bobInfo.RemoteBalance != aliceAmt {
+		t.Fatalf("bob's remote balance is incorrect, got %v, "+
+			"expected %v", bobInfo.RemoteBalance, aliceAmt)
+	}
+	if len(bobInfo.PendingHtlcs) != 0 {
+		t.Fatalf("bob's pending htlcs is incorrect, got %v, "+
+			"expected %v", len(bobInfo.PendingHtlcs), 0)
+	}
 	*/
 
 	// Finally, immediately close the channel. This function will also
