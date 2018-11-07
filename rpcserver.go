@@ -3922,7 +3922,7 @@ func (r *rpcServer) FeeReport(ctx context.Context,
 // derived by the fact that fee rates are computed using a fixed point of
 // 1,000,000. As a result, the smallest representable fee rate is 1e-6, or
 // 0.000001, or 0.0001%.
-const minFeeRate = 1e-6
+const minFeeRate = 0
 
 // UpdateChannelPolicy allows the caller to update the channel forwarding policy
 // for all channels globally, or a particular channel.
