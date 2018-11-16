@@ -3841,9 +3841,22 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		fmt.Printf("Rate: %.2f%%\n", 100.0 * float64(totSucceeded) / float64(totTried))
 		for i := 0; i < numPayIntents; i++ {
 			rt := 100.0 * float64(succeeded[i]) / float64(tried[i])
-			fmt.Printf("%v -> %v: %.2f%% \t(%v/%v)\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]], rt,
+			fmt.Printf("%v -> %v: %.2f%%\t(%v/%v)\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]], rt,
 				succeeded[i], tried[i])
 		}
+	}
+
+	// helper function to lookup node name based on channel id
+	lookupChan := func(chanID uint64) (string, string) {
+		chanOutputIdx := chanID & 0xffff
+		for i := 0; i < numChannels; i++ {
+			if chanPoints[i].OutputIndex == uint32(chanOutputIdx) {
+				start := nodeNames[connections[i][0]]
+				end := nodeNames[connections[i][1]]
+				return start, end
+			}
+		}
+		return "U", "U"
 	}
 
 	for i := 0; i < numPayIntents; i++ {
@@ -3888,6 +3901,13 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 							payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
 							if err == nil && payresp.PaymentError == "" {
 								atomic.AddUint64(&atomicSucceeded[i], 1)
+								fmt.Printf("%v->%v: ", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+								rt := payresp.PaymentRoute.Hops
+								for _, hop := range rt {
+									start, end := lookupChan(hop.ChanId)
+									fmt.Printf("%v->%v ", start, end)
+								}
+								fmt.Printf("\n")
 							}
 							sendok <- 1
 						}(i)
