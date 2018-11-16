@@ -3647,19 +3647,8 @@ func testMultiHopPayments(net *lntest.NetworkHarness, t *harnessTest) {
 
 func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	ctxb := context.Background()
-
-	// As we'll be querying the channels state frequently we'll
-	// create a closure helper function for the purpose.
-	/*getChanInfo := func(node *lntest.HarnessNode) ([]*lnrpc.Channel, error) {
-		req := &lnrpc.ListChannelsRequest{}
-		channelInfo, err := node.ListChannels(ctxb, req)
-		if err != nil {
-			return nil, err
-		}
-		return channelInfo.Channels, nil
-	}*/
 	
-	// Set channel sizes here. chanAmt sets the channel
+	// Set channel sizes here 
 	const chanAmt = btcutil.Amount(200000)
 	const pushAmt = btcutil.Amount(100000)
 
@@ -3669,7 +3658,6 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	timeout := time.Duration(time.Second * 15)
 
 	// create the topology as used in the Spider paper
-	// first, we create the nodes.
 	numNodes := 5
 	nodes := make([]*lntest.HarnessNode, numNodes)
 	nodeNames := []string{"1", "2", "3", "4", "5"}
@@ -3682,9 +3670,10 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	payRates := []int{1, 1, 2, 1, 2, 2, 2, 1}
 
 	const baseRate = 5		// num of payments per second
-	const paymentAmt = 5000	
-	const testTime = 10	// seconds
+	const paymentAmt = 5000	// size of each payment
+	const testTime = 60	// seconds
 
+	// construct nodes 
 	for i := 0; i < numNodes; i++ {
 		nd, err := net.NewNode(nodeNames[i], nil)
 		nodes[i] = nd
@@ -3780,7 +3769,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		}
 	}
 
-
+	// update channel policy to eliminate fees, then wait for everyone to see
 	timeLockDelta := uint32(144)
 
 	expectedPolicy := &lnrpc.RoutingPolicy{
@@ -3836,6 +3825,27 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	atomicSucceeded := make([]uint64, numPayIntents)
 	atomicTried := make([]uint64, numPayIntents)
 
+	// helper function to print out success rates, etc.
+	printStats := func() {
+		succeeded := make([]uint64, numPayIntents)
+		tried := make([]uint64, numPayIntents)
+		var totSucceeded uint64 = 0
+		var totTried uint64 = 0
+		for i := 0; i < numPayIntents; i++ {
+			succeeded[i] = atomic.LoadUint64(&atomicSucceeded[i])
+			tried[i] = atomic.LoadUint64(&atomicTried[i])
+			totSucceeded += succeeded[i]
+			totTried += tried[i]
+		}
+		fmt.Printf("%v transactions performed in total, %v succeeded\n", totTried, totSucceeded)
+		fmt.Printf("Rate: %.2f%%\n", 100.0 * float64(totSucceeded) / float64(totTried))
+		for i := 0; i < numPayIntents; i++ {
+			rt := 100.0 * float64(succeeded[i]) / float64(tried[i])
+			fmt.Printf("%v -> %v: %.2f%% \t(%v/%v)\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]], rt,
+				succeeded[i], tried[i])
+		}
+	}
+
 	for i := 0; i < numPayIntents; i++ {
 		go func(i int) {
 			defer wg.Done()
@@ -3848,33 +3858,42 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 					return
 				case <-tick:
 					go func(i int) {
+						timeout := time.After(time.Duration(20) * time.Second)
 						tranwg.Add(1)
 						atomic.AddUint64(&atomicTried[i], 1)
 						defer tranwg.Done()
-						// generate invoice and add to target node
-						preimage := make([]byte, 32)
-						_, err := rand.Read(preimage)
-						if err != nil {
-							t.Fatalf("unable to generate preimage: %v", err)
-						}
-						invoiceReq := &lnrpc.Invoice{
-							Memo:      "testing",
-							RPreimage: preimage,
-							Value:     int64(paymentAmt),
-						}
-						resp, err := nodes[payIntents[i][1]].AddInvoice(ctxb, invoiceReq)
-						if err != nil {
-							t.Fatalf("unable to add invoice: %v", err)
-						}
+						sendok := make(chan int, 1)
+						go func(i int) {
+							// generate invoice and add to target node
+							preimage := make([]byte, 32)
+							_, err := rand.Read(preimage)
+							if err != nil {
+								t.Fatalf("unable to generate preimage: %v", err)
+							}
+							invoiceReq := &lnrpc.Invoice{
+								Memo:      "testing",
+								RPreimage: preimage,
+								Value:     int64(paymentAmt),
+							}
+							resp, err := nodes[payIntents[i][1]].AddInvoice(ctxb, invoiceReq)
+							if err != nil {
+								t.Fatalf("unable to add invoice: %v", err)
+							}
 
-						invoice := resp.PaymentRequest
-						sendReq := &lnrpc.SendRequest{
-							PaymentRequest: invoice,
-							SpiderAlgo: routing.ShortestPath,
-						}
-						payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
-						if err == nil && payresp.PaymentError == "" {
-							atomic.AddUint64(&atomicSucceeded[i], 1)
+							invoice := resp.PaymentRequest
+							sendReq := &lnrpc.SendRequest{
+								PaymentRequest: invoice,
+								SpiderAlgo: routing.ShortestPath,
+							}
+							payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
+							if err == nil && payresp.PaymentError == "" {
+								atomic.AddUint64(&atomicSucceeded[i], 1)
+							}
+							sendok <- 1
+						}(i)
+						select {
+						case <-sendok:
+						case <-timeout:
 						}
 					}(i)
 				}
@@ -3885,27 +3904,9 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	wg.Wait()
 	tranwg.Wait()
 
-	succeeded := make([]uint64, numPayIntents)
-	tried := make([]uint64, numPayIntents)
-	var totSucceeded uint64 = 0
-	var totTried uint64 = 0
-	for i := 0; i < numPayIntents; i++ {
-		succeeded[i] = atomic.LoadUint64(&atomicSucceeded[i])
-		tried[i] = atomic.LoadUint64(&atomicTried[i])
-		totSucceeded += succeeded[i]
-		totTried += tried[i]
-	}
-	fmt.Printf("%v transactions performed in total, %v succeeded\n", totTried, totSucceeded)
-	fmt.Printf("Rate: %v\n", float64(totSucceeded) / float64(totTried))
-	for i := 0; i < numPayIntents; i++ {
-		rt := float64(succeeded[i]) / float64(tried[i])
-		fmt.Printf("%v -> %v: %v (%v/%v)\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]], rt,
-			succeeded[i], tried[i])
-	}
+	printStats()
 
-	// Finally, immediately close the channel. This function will also
-	// block until the channel is closed and will additionally assert the
-	// relevant channel closing post conditions.
+	// Finally, immediately close the channel
 	ctxt, _ = context.WithTimeout(ctxb, timeout)
 	for i := 0; i < numChannels; i++ {
 		closeChannelAndAssert(ctxt, t, net, nodes[connections[i][0]], chanPoints[i], false)
