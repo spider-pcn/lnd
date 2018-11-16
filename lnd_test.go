@@ -3675,13 +3675,13 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	nodeNames := []string{"1", "2", "3", "4", "5"}
 
 	numChannels := 6
-	connections := [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 1}, {1, 3}}
+	connections := [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 0}, {1, 3}}
 
 	numPayIntents := 8
 	payIntents := [][]int{{0, 1}, {0, 4}, {1, 3}, {2, 1}, {2, 4}, {3, 0}, {3, 2}, {4, 2}}
 	payRates := []int{1, 1, 2, 1, 2, 2, 2, 1}
 
-	const baseRate = 2	// num of payments per second
+	const baseRate = 5		// num of payments per second
 	const paymentAmt = 5000	
 	const testTime = 60	// seconds
 
@@ -3833,8 +3833,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	var wg sync.WaitGroup
 	var tranwg sync.WaitGroup
 	wg.Add(numPayIntents)
-	var succeededPays uint64
-	var failedPays uint64
+	atomicSucceeded := make([]uint64, numPayIntents)
+	atomicFailed := make([]uint64, numPayIntents)
 
 	for i := 0; i < numPayIntents; i++ {
 		go func(i int) {
@@ -3873,12 +3873,14 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 						}
 						payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
 						if err != nil {
-							atomic.AddUint64(&failedPays, 1)
+							atomic.AddUint64(&atomicFailed[i], 1)
+							//fmt.Printf("error sending: %v\n", err)
 						} else {
 							if payresp.PaymentError != "" {
-								atomic.AddUint64(&failedPays, 1)
+								atomic.AddUint64(&atomicFailed[i], 1)
+								//fmt.Printf("error receiving: %v\n", payresp.PaymentError)
 							} else {
-								atomic.AddUint64(&succeededPays, 1)
+								atomic.AddUint64(&atomicSucceeded[i], 1)
 							}
 						}
 					}(i)
@@ -3886,56 +3888,27 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			}
 		}(i)
 	}
+	
 	wg.Wait()
 	tranwg.Wait()
 
-	succeeded := atomic.LoadUint64(&succeededPays)
-	failed := atomic.LoadUint64(&failedPays)
-	fmt.Printf("%v transactions performed in total, %v succeeded\n", succeeded + failed, succeeded)
-	fmt.Printf("Rate: %v\n", float64(succeeded) / float64(succeeded + failed))
-
-	/*
-	// Wait for Alice and Bob to receive revocations messages, and update
-	// states, i.e. balance info.
-	time.Sleep(1 * time.Second)
-
-	aliceInfo, err := getChanInfo(net.Alice)
-	if err != nil {
-		t.Fatalf("unable to get bob's channel info: %v", err)
+	succeeded := make([]uint64, numPayIntents)
+	failed := make([]uint64, numPayIntents)
+	var totSucceeded uint64 = 0
+	var totFailed uint64 = 0
+	for i := 0; i < numPayIntents; i++ {
+		succeeded[i] = atomic.LoadUint64(&atomicSucceeded[i])
+		failed[i] = atomic.LoadUint64(&atomicFailed[i])
+		totSucceeded += succeeded[i]
+		totFailed += failed[i]
 	}
-	if aliceInfo.RemoteBalance != bobAmt {
-		t.Fatalf("alice's remote balance is incorrect, got %v, "+
-			"expected %v", aliceInfo.RemoteBalance, bobAmt)
+	fmt.Printf("%v transactions performed in total, %v succeeded\n", totSucceeded + totFailed, totSucceeded)
+	fmt.Printf("Rate: %v\n", float64(totSucceeded) / float64(totSucceeded + totFailed))
+	for i := 0; i < numPayIntents; i++ {
+		rt := float64(succeeded[i]) / float64(succeeded[i] + failed[i])
+		fmt.Printf("%v -> %v: %v (%v/%v)\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]], rt,
+			succeeded[i], succeeded[i] + failed[i])
 	}
-	if aliceInfo.LocalBalance != aliceAmt {
-		t.Fatalf("alice's local balance is incorrect, got %v, "+
-			"expected %v", aliceInfo.LocalBalance, aliceAmt)
-	}
-	if len(aliceInfo.PendingHtlcs) != 0 {
-		t.Fatalf("alice's pending htlcs is incorrect, got %v, "+
-			"expected %v", len(aliceInfo.PendingHtlcs), 0)
-	}
-
-	// Next query for Bob's and Alice's channel states, in order to confirm
-	// that all payment have been successful transmitted.
-	bobInfo, err := getChanInfo(net.Bob)
-	if err != nil {
-		t.Fatalf("unable to get bob's channel info: %v", err)
-	}
-
-	if bobInfo.LocalBalance != bobAmt {
-		t.Fatalf("bob's local balance is incorrect, got %v, expected"+
-			" %v", bobInfo.LocalBalance, bobAmt)
-	}
-	if bobInfo.RemoteBalance != aliceAmt {
-		t.Fatalf("bob's remote balance is incorrect, got %v, "+
-			"expected %v", bobInfo.RemoteBalance, aliceAmt)
-	}
-	if len(bobInfo.PendingHtlcs) != 0 {
-		t.Fatalf("bob's pending htlcs is incorrect, got %v, "+
-			"expected %v", len(bobInfo.PendingHtlcs), 0)
-	}
-	*/
 
 	// Finally, immediately close the channel. This function will also
 	// block until the channel is closed and will additionally assert the
