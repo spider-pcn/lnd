@@ -3683,7 +3683,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	const baseRate = 5		// num of payments per second
 	const paymentAmt = 5000	
-	const testTime = 60	// seconds
+	const testTime = 10	// seconds
 
 	for i := 0; i < numNodes; i++ {
 		nd, err := net.NewNode(nodeNames[i], nil)
@@ -3834,7 +3834,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	var tranwg sync.WaitGroup
 	wg.Add(numPayIntents)
 	atomicSucceeded := make([]uint64, numPayIntents)
-	atomicFailed := make([]uint64, numPayIntents)
+	atomicTried := make([]uint64, numPayIntents)
 
 	for i := 0; i < numPayIntents; i++ {
 		go func(i int) {
@@ -3849,6 +3849,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 				case <-tick:
 					go func(i int) {
 						tranwg.Add(1)
+						atomic.AddUint64(&atomicTried[i], 1)
 						defer tranwg.Done()
 						// generate invoice and add to target node
 						preimage := make([]byte, 32)
@@ -3872,16 +3873,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 							SpiderAlgo: routing.ShortestPath,
 						}
 						payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
-						if err != nil {
-							atomic.AddUint64(&atomicFailed[i], 1)
-							//fmt.Printf("error sending: %v\n", err)
-						} else {
-							if payresp.PaymentError != "" {
-								atomic.AddUint64(&atomicFailed[i], 1)
-								//fmt.Printf("error receiving: %v\n", payresp.PaymentError)
-							} else {
-								atomic.AddUint64(&atomicSucceeded[i], 1)
-							}
+						if err == nil && payresp.PaymentError == "" {
+							atomic.AddUint64(&atomicSucceeded[i], 1)
 						}
 					}(i)
 				}
@@ -3893,21 +3886,21 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	tranwg.Wait()
 
 	succeeded := make([]uint64, numPayIntents)
-	failed := make([]uint64, numPayIntents)
+	tried := make([]uint64, numPayIntents)
 	var totSucceeded uint64 = 0
-	var totFailed uint64 = 0
+	var totTried uint64 = 0
 	for i := 0; i < numPayIntents; i++ {
 		succeeded[i] = atomic.LoadUint64(&atomicSucceeded[i])
-		failed[i] = atomic.LoadUint64(&atomicFailed[i])
+		tried[i] = atomic.LoadUint64(&atomicTried[i])
 		totSucceeded += succeeded[i]
-		totFailed += failed[i]
+		totTried += tried[i]
 	}
-	fmt.Printf("%v transactions performed in total, %v succeeded\n", totSucceeded + totFailed, totSucceeded)
-	fmt.Printf("Rate: %v\n", float64(totSucceeded) / float64(totSucceeded + totFailed))
+	fmt.Printf("%v transactions performed in total, %v succeeded\n", totTried, totSucceeded)
+	fmt.Printf("Rate: %v\n", float64(totSucceeded) / float64(totTried))
 	for i := 0; i < numPayIntents; i++ {
-		rt := float64(succeeded[i]) / float64(succeeded[i] + failed[i])
+		rt := float64(succeeded[i]) / float64(tried[i])
 		fmt.Printf("%v -> %v: %v (%v/%v)\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]], rt,
-			succeeded[i], succeeded[i] + failed[i])
+			succeeded[i], tried[i])
 	}
 
 	// Finally, immediately close the channel. This function will also
