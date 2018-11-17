@@ -4016,10 +4016,12 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	}
 
 	// Finally, immediately close the channel.
+	/*
 	ctxt, _ = context.WithTimeout(ctxb, timeout)
 	for i := 0; i < numChannels; i++ {
 		closeChannelAndAssert(ctxt, t, net, nodes[connections[i][0]], chanPoints[i], false)
 	}
+	*/
 }
 
 // testSingleHopSendToRoute tests that payments are properly processed
