@@ -1648,7 +1648,7 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 		}
 
 		// get optimal route
-		route, err = dummyPaySession.RequestRoute(
+		route, err = dummyPaySession.RequestShortestPath(
 			payment, uint32(currentHeight), finalCLTVDelta,
 		)
 		if err != nil {
