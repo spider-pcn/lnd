@@ -2035,7 +2035,6 @@ return preImage, route, nil
 // error.
 func pruneVertexFailure(paySession *paymentSession, route *Route,
 errSource *btcec.PublicKey, nextNode bool) {
-
 	// By default, we'll try to prune the node that actually sent us the
 	// error.
 	errNode := NewVertex(errSource)
@@ -2061,7 +2060,6 @@ errSource *btcec.PublicKey, nextNode bool) {
 // error.
 func pruneEdgeFailure(paySession *paymentSession, route *Route,
 errSource *btcec.PublicKey) {
-
 	// As this error indicates that the target channel was unable to carry
 	// this HTLC (for w/e reason), we'll query the index to find the
 	// _outgoing_ channel the source of the error was meant to pass the
