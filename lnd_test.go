@@ -3951,21 +3951,33 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	}
 
 	// Send payments.
+
+	// For each payment demand, we create a "dispatcher" goroutine to create transactions for that demand.
+	// Then we use channels to control when they can fire a payment. Channels are filled by another goroutine
+	// that periodically sends to those channels.
+
+	// Channels to control payment goroutines.
+	var paymentTick = make([]chan int, numPayIntents)
+	for i := range paymentTick {
+   		paymentTick[i] = make(chan int, 1)
+	}
+
+	// Channels to signal the end of the experiment
+	var paymentStop = make([]chan int, numPayIntents)
+	for i := range paymentTick {
+   		paymentStop[i] = make(chan int, 1)
+	}
+	
+	// Dispatcher goroutines
 	for i := 0; i < numPayIntents; i++ {
-		// For each payment demand, we create a "dispatcher" goroutine to create transactions for that demand
 		go func(i int) {
 			defer wg.Done()
-			timeToSleep := 1000000.0 / (baseRate * payRates[i])	// interval between firing payments
-			// We will timeout after test duration has past.
-			timeout := time.After(time.Duration(testTime) * time.Second)
-			// `Tick` creates a signal every certain interval.
-			tick := time.Tick(time.Duration(timeToSleep) * time.Microsecond)
 			for {
 				// We either timeout, or wait for the next tick.
 				select {
-				case <-timeout:
+				case <-paymentStop[i]:
 					return
-				case <-tick:
+				case <-paymentTick[i]:
 					// We create a goroutine for every single payment, and track the status of the payment here
 					go func(i int) {
 						// The payment will timeout after 20 seconds.
@@ -4023,6 +4035,40 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			}
 		}(i)
 	}
+
+	// Control goroutine
+	go func() {
+		// Create a list of payments that we will issue every round
+		var paymentOrder []int
+		for idx, rt := range(payRates) {
+			for i := 0; i < rt; i++ {
+				paymentOrder = append(paymentOrder, idx)
+			}
+		}
+		numPaymentEachRound := len(paymentOrder)
+		roundInterval := 1000000.0 / baseRate	// interval between firing payments
+		
+		tick := time.Tick(time.Duration(roundInterval) * time.Microsecond)
+		experimentTimeout := time.After(time.Duration(testTime) * time.Second)
+		for {
+			select {
+			// If the experiment is over, signal each dispatcher goroutines.
+			case <-experimentTimeout:
+				for i := 0; i < numPayIntents; i++ {
+					paymentStop[i] <- 1
+				}
+				return
+			// If the next round comes
+			case <-tick:
+				prand.Shuffle(numPaymentEachRound, func(i, j int) {
+					paymentOrder[i], paymentOrder[j] = paymentOrder[j], paymentOrder[i]
+				})
+				for _, idx := range(paymentOrder) {
+					paymentTick[idx] <- 1
+				}
+			}
+		}
+	}()
 	
 	// Wait for the goroutines that we created.
 	wg.Wait()
