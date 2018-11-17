@@ -3703,6 +3703,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	chanPoints := make([]*lnrpc.ChannelPoint, numChannels)
 	chanTXIDs := make([]*chainhash.Hash, numChannels)
 	chanFundPoints := make([]*wire.OutPoint, numChannels)
+	chanIDs := make([]uint64, numChannels)
 
 	for i, conn := range connections {
 		ctxt, _ := context.WithTimeout(ctxb, timeout)
@@ -3725,6 +3726,22 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		chanFundPoints[i] = &wire.OutPoint{
 			Hash:  *chanTXIDs[i],
 			Index: chanPoints[i].OutputIndex,
+		}
+		// get the channel id (ChanId)
+		listReq := &lnrpc.ListChannelsRequest{}
+		listResp, err := nodes[conn[0]].ListChannels(ctxb, listReq)
+		localChannels := listResp.Channels
+		for _, ch := range localChannels {
+			chid := ch.ChanId
+			found := false
+			for _, id := range chanIDs {
+				if chid == id {
+					found = true
+				} 
+			}
+			if found == false {
+				chanIDs[i] = chid
+			}
 		}
 	}
 	
@@ -3848,9 +3865,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	// helper function to lookup node name based on channel id
 	lookupChan := func(chanID uint64) (string, string) {
-		chanOutputIdx := chanID & 0xffff
 		for i := 0; i < numChannels; i++ {
-			if chanPoints[i].OutputIndex == uint32(chanOutputIdx) {
+			if chanIDs[i] == chanID {
 				start := nodeNames[connections[i][0]]
 				end := nodeNames[connections[i][1]]
 				return start, end
@@ -3858,6 +3874,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		}
 		return "U", "U"
 	}
+
+	var mux sync.Mutex	// fmt.Println is not concurrency-safe
 
 	for i := 0; i < numPayIntents; i++ {
 		go func(i int) {
@@ -3901,6 +3919,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 							payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
 							if err == nil && payresp.PaymentError == "" {
 								atomic.AddUint64(&atomicSucceeded[i], 1)
+								mux.Lock()
 								fmt.Printf("%v->%v: ", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
 								rt := payresp.PaymentRoute.Hops
 								for _, hop := range rt {
@@ -3908,6 +3927,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 									fmt.Printf("%v->%v ", start, end)
 								}
 								fmt.Printf("\n")
+								mux.Unlock()
 							}
 							sendok <- 1
 						}(i)
