@@ -3653,7 +3653,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	// pushAmt: the money that we push to the remote end
 	// Note that there is a fee to establish the channel, so the total usable amount
 	// is less than chanAmt.
-	const chanAmt = btcutil.Amount(200000)
+	const chanAmt = btcutil.Amount(209050)
 	const pushAmt = btcutil.Amount(100000)
 
 	// Set transaction fees
