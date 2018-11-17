@@ -3874,6 +3874,9 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	atomicSucceeded := make([]uint64, numPayIntents)
 	atomicTried := make([]uint64, numPayIntents)
 
+	// We need a mutex here: fmt.Println is not concurrency-safe
+	var mux sync.Mutex
+
 	// Helper function to print success rates, etc.
 	printStats := func() {
 		succeeded := make([]uint64, numPayIntents)
@@ -3886,6 +3889,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			totSucceeded += succeeded[i]
 			totTried += tried[i]
 		}
+		mux.Lock()
 		fmt.Printf("%v transactions performed in total, %v succeeded\n", totTried, totSucceeded)
 		fmt.Printf("Rate: %.2f%%\n", 100.0 * float64(totSucceeded) / float64(totTried))
 		for i := 0; i < numPayIntents; i++ {
@@ -3893,6 +3897,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			fmt.Printf("%v -> %v: %.2f%%\t(%v/%v)\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]], rt,
 				succeeded[i], tried[i])
 		}
+		mux.Unlock()
 	}
 
 	// Helper function to lookup node name based on channel id
@@ -3907,7 +3912,21 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		return "U", "U"	// U for unknown
 	}
 
-	var mux sync.Mutex	// fmt.Println is not concurrency-safe, so we need mutex here
+	// Helper function to dump channel info
+	printChan := func(chanIdx int) {
+		listReq := &lnrpc.ListChannelsRequest{}
+		listResp, _ := nodes[connections[chanIdx][0]].ListChannels(ctxb, listReq)
+		localChannels := listResp.Channels
+		for _, ch := range localChannels {
+			if ch.ChanId == chanIDs[chanIdx] {
+				mux.Lock()
+				fmt.Printf("%v->%v stat: Loc. Bal. %v, Rmt. Bal. %v, Sent %v, Rcvd %v\n",
+					nodeNames[connections[chanIdx][0]], nodeNames[connections[chanIdx][1]],
+					ch.LocalBalance, ch.RemoteBalance, ch.TotalSatoshisSent, ch.TotalSatoshisReceived)
+				mux.Unlock()
+			}
+		}
+	}
 
 	// Send payments.
 	for i := 0; i < numPayIntents; i++ {
@@ -3992,6 +4011,9 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	tranwg.Wait()
 
 	printStats()
+	for cidx, _ := range(chanIDs) {
+		printChan(cidx)
+	}
 
 	// Finally, immediately close the channel.
 	ctxt, _ = context.WithTimeout(ctxb, timeout)
