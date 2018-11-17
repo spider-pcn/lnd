@@ -3928,6 +3928,28 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		}
 	}
 
+	printRoute := func(startIdx int, hops []*lnrpc.Hop) {
+		lastNodeName := nodeNames[startIdx]
+		for hopIdx, hop := range hops {
+			start, end := lookupChan(hop.ChanId)
+			if start == lastNodeName {
+				lastNodeName = end
+				if hopIdx == 0 {
+					fmt.Printf("%v->%v", start, end)
+				} else {
+					fmt.Printf("->%v", end)
+				}
+			} else {
+				lastNodeName = start
+				if hopIdx == 0 {
+					fmt.Printf("%v->%v", end, start)
+				} else {
+					fmt.Printf("->%v", start)
+				}
+			}
+		}
+	}
+
 	// Send payments.
 	for i := 0; i < numPayIntents; i++ {
 		// For each payment demand, we create a "dispatcher" goroutine to create transactions for that demand
@@ -3986,11 +4008,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 								atomic.AddUint64(&atomicSucceeded[i], 1)
 								mux.Lock()
 								fmt.Printf("%v->%v: ", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
-								rt := payresp.PaymentRoute.Hops
-								for _, hop := range rt {
-									start, end := lookupChan(hop.ChanId)
-									fmt.Printf("%v->%v ", start, end)
-								}
+								printRoute(payIntents[i][0], payresp.PaymentRoute.Hops)
 								fmt.Printf("\n")
 								mux.Unlock()
 							}
