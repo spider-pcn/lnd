@@ -458,17 +458,294 @@ func edgeWeight(lockedAmt lnwire.MilliSatoshi, fee lnwire.MilliSatoshi,
 	return int64(fee) + timeLockPenalty
 }
 
-// findPath attempts to find a path from the source node within the
-// ChannelGraph to the target node that's capable of supporting a payment of
-// `amt` value. The current approach implemented is modified version of
-// Dijkstra's algorithm to find a single shortest path between the source node
-// and the destination. The distance metric used for edges is related to the
-// time-lock+fee costs along a particular edge. If a path is found, this
-// function returns a slice of ChannelHop structs which encoded the chosen path
-// from the target to the source. The search is performed backwards from
-// destination node back to source. This is to properly accumulate fees
-// that need to be paid along the path and accurately check the amount
-// to forward at every node against the available bandwidth.
+
+// This function is similar to findPath. However, it does not consider whether
+// the payment can be sent or not, i.e. it ignores previous failures and channel
+// capacity limits.
+func findSpiderShortestPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
+	additionalEdges map[Vertex][]*channeldb.ChannelEdgePolicy,
+	sourceNode *channeldb.LightningNode, target *btcec.PublicKey,
+	amt lnwire.MilliSatoshi) ([]*ChannelHop, error) {
+
+	var err error
+	if tx == nil {
+		tx, err = graph.Database().Begin(false)
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback()
+	}
+
+	// First we'll initialize an empty heap which'll help us to quickly
+	// locate the next edge we should visit next during our graph
+	// traversal.
+	var nodeHeap distanceHeap
+
+	// For each node in the graph, we create an entry in the distance map
+	// for the node set with a distance of "infinity". graph.ForEachNode
+	// also returns the source node, so there is no need to add the source
+	// node explictly.
+	distance := make(map[Vertex]nodeWithDist)
+	if err := graph.ForEachNode(tx, func(_ *bolt.Tx, node *channeldb.LightningNode) error {
+		// TODO(roasbeef): with larger graph can just use disk seeks
+		// with a visited map
+		distance[Vertex(node.PubKeyBytes)] = nodeWithDist{
+			dist: infinity,
+			node: node,
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	additionalEdgesWithSrc := make(map[Vertex][]*edgePolicyWithSource)
+	for vertex, outgoingEdgePolicies := range additionalEdges {
+		// We'll also include all the nodes found within the additional
+		// edges that are not known to us yet in the distance map.
+		node := &channeldb.LightningNode{PubKeyBytes: vertex}
+		distance[vertex] = nodeWithDist{
+			dist: infinity,
+			node: node,
+		}
+
+		// Build reverse lookup to find incoming edges. Needed because
+		// search is taken place from target to source.
+		for _, outgoingEdgePolicy := range outgoingEdgePolicies {
+			toVertex := outgoingEdgePolicy.Node.PubKeyBytes
+			incomingEdgePolicy := &edgePolicyWithSource{
+				sourceNode: node,
+				edge:       outgoingEdgePolicy,
+			}
+
+			additionalEdgesWithSrc[toVertex] =
+				append(additionalEdgesWithSrc[toVertex],
+					incomingEdgePolicy)
+		}
+	}
+
+	sourceVertex := Vertex(sourceNode.PubKeyBytes)
+
+	// We can't always assume that the end destination is publicly
+	// advertised to the network and included in the graph.ForEachNode call
+	// above, so we'll manually include the target node. The target node
+	// charges no fee. Distance is set to 0, because this is the starting
+	// point of the graph traversal. We are searching backwards to get the
+	// fees first time right and correctly match channel bandwidth.
+	targetVertex := NewVertex(target)
+	targetNode := &channeldb.LightningNode{PubKeyBytes: targetVertex}
+	distance[targetVertex] = nodeWithDist{
+		dist:            0,
+		node:            targetNode,
+		amountToReceive: amt,
+		fee:             0,
+	}
+
+	// We'll use this map as a series of "next" hop pointers. So to get
+	// from `Vertex` to the target node, we'll take the edge that it's
+	// mapped to within `next`.
+	next := make(map[Vertex]*ChannelHop)
+
+	// processEdge is a helper closure that will be used to make sure edges
+	// satisfy our specific requirements.
+	processEdge := func(fromNode *channeldb.LightningNode,
+		edge *channeldb.ChannelEdgePolicy,
+		bandwidth lnwire.MilliSatoshi, toNode Vertex) {
+
+		fromVertex := Vertex(fromNode.PubKeyBytes)
+
+		// If the edge is currently disabled, then we'll stop here, as
+		// we shouldn't attempt to route through it.
+		edgeFlags := lnwire.ChanUpdateFlag(edge.Flags)
+		if edgeFlags&lnwire.ChanUpdateDisabled != 0 {
+			return
+		}
+
+		toNodeDist := distance[toNode]
+
+		amountToSend := toNodeDist.amountToReceive
+
+		// If the amountToSend is less than the minimum required
+		// amount, return.
+		if amountToSend < edge.MinHTLC {
+			return
+		}
+
+		// Compute fee that fromNode is charging. It is based on the
+		// amount that needs to be sent to the next node in the route.
+		//
+		// Source node has no precedessor to pay a fee. Therefore set
+		// fee to zero, because it should not be included in the fee
+		// limit check and edge weight.
+		//
+		// Also determine the time lock delta that will be added to the
+		// route if fromNode is selected. If fromNode is the source
+		// node, no additional timelock is required.
+		var fee lnwire.MilliSatoshi
+		var timeLockDelta uint16
+		if fromVertex != sourceVertex {
+			fee = computeFee(amountToSend, edge)
+			timeLockDelta = edge.TimeLockDelta
+		}
+
+		// amountToReceive is the amount that the node that is added to
+		// the distance map needs to receive from a (to be found)
+		// previous node in the route. That previous node will need to
+		// pay the amount that this node forwards plus the fee it
+		// charges.
+		amountToReceive := amountToSend + fee
+
+		// By adding fromNode in the route, there will be an extra
+		// weight composed of the fee that this node will charge and
+		// the amount that will be locked for timeLockDelta blocks in
+		// the HTLC that is handed out to fromNode.
+		weight := edgeWeight(amountToReceive, fee, timeLockDelta)
+
+		// Compute the tentative distance to this new channel/edge
+		// which is the distance from our toNode to the target node
+		// plus the weight of this edge.
+		tempDist := toNodeDist.dist + weight
+
+		// If this new tentative distance is not better than the current
+		// best known distance to this node, return.
+		if tempDist >= distance[fromVertex].dist {
+			return
+		}
+
+		// If the edge has no time lock delta, the payment will always
+		// fail, so return.
+		//
+		// TODO(joostjager): Is this really true? Can't it be that
+		// nodes take this risk in exchange for a extraordinary high
+		// fee?
+		if edge.TimeLockDelta == 0 {
+			return
+		}
+
+		// All conditions are met and this new tentative distance is
+		// better than the current best known distance to this node.
+		// The new better distance is recorded, and also our "next hop"
+		// map is populated with this edge.
+		distance[fromVertex] = nodeWithDist{
+			dist:            tempDist,
+			node:            fromNode,
+			amountToReceive: amountToReceive,
+			fee:             fee,
+		}
+
+		next[fromVertex] = &ChannelHop{
+			ChannelEdgePolicy: edge,
+			Bandwidth:         bandwidth,
+		}
+
+		// Add this new node to our heap as we'd like to further
+		// explore backwards through this edge.
+		heap.Push(&nodeHeap, distance[fromVertex])
+	}
+
+	// TODO(roasbeef): also add path caching
+	//  * similar to route caching, but doesn't factor in the amount
+
+	// To start, our target node will the sole item within our distance
+	// heap.
+	heap.Push(&nodeHeap, distance[targetVertex])
+
+	for nodeHeap.Len() != 0 {
+		// Fetch the node within the smallest distance from our source
+		// from the heap.
+		partialPath := heap.Pop(&nodeHeap).(nodeWithDist)
+		bestNode := partialPath.node
+
+		// If we've reached our source (or we don't have any incoming
+		// edges), then we're done here and can exit the graph
+		// traversal early.
+		if bytes.Equal(bestNode.PubKeyBytes[:], sourceVertex[:]) {
+			break
+		}
+
+		// Now that we've found the next potential step to take we'll
+		// examine all the incoming edges (channels) from this node to
+		// further our graph traversal.
+		pivot := Vertex(bestNode.PubKeyBytes)
+		err := bestNode.ForEachChannel(tx, func(tx *bolt.Tx,
+			edgeInfo *channeldb.ChannelEdgeInfo,
+			_, inEdge *channeldb.ChannelEdgePolicy) error {
+
+			// If there is no edge policy for this candidate
+			// node, skip. Note that we are searching backwards
+			// so this node would have come prior to the pivot
+			// node in the route.
+			if inEdge == nil {
+				return nil
+			}
+
+			
+			edgeBandwidth := lnwire.NewMSatFromSatoshis(edgeInfo.Capacity)
+
+			// Before we can process the edge, we'll need to fetch
+			// the node on the _other_ end of this channel as we
+			// may later need to iterate over the incoming edges of
+			// this node if we explore it further.
+			channelSource, err := edgeInfo.FetchOtherNode(
+				tx, pivot[:],
+			)
+			if err != nil {
+				return err
+			}
+
+			// Check if this candidate node is better than what we
+			// already have.
+			processEdge(channelSource, inEdge, edgeBandwidth, pivot)
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Then, we'll examine all the additional edges from the node
+		// we're currently visiting. Since we don't know the capacity
+		// of the private channel, we'll assume it was selected as a
+		// routing hint due to having enough capacity for the payment
+		// and use the payment amount as its capacity.
+		bandWidth := partialPath.amountToReceive
+		for _, reverseEdge := range additionalEdgesWithSrc[bestNode.PubKeyBytes] {
+			processEdge(reverseEdge.sourceNode, reverseEdge.edge, bandWidth, pivot)
+		}
+	}
+
+	// If the source node isn't found in the next hop map, then a path
+	// doesn't exist, so we terminate in an error.
+	if _, ok := next[sourceVertex]; !ok {
+		return nil, newErrf(ErrNoPathFound, "unable to find a path to "+
+			"destination")
+	}
+
+	// Use the nextHop map to unravel the forward path from source to target.
+	pathEdges := make([]*ChannelHop, 0, len(next))
+	currentNode := sourceVertex
+	for currentNode != targetVertex { // TODO(roasbeef): assumes no cycles
+		// Determine the next hop forward using the next map.
+		nextNode := next[currentNode]
+
+		// Add the next hop to the list of path edges.
+		pathEdges = append(pathEdges, nextNode)
+
+		// Advance current node.
+		currentNode = Vertex(nextNode.Node.PubKeyBytes)
+	}
+
+	// The route is invalid if it spans more than 20 hops. The current
+	// Sphinx (onion routing) implementation can only encode up to 20 hops
+	// as the entire packet is fixed size. If this route is more than 20
+	// hops, then it's invalid.
+	numEdges := len(pathEdges)
+	if numEdges > HopLimit {
+		return nil, newErr(ErrMaxHopsExceeded, "potential path has "+
+			"too many hops")
+	}
+
+	return pathEdges, nil
+}
+
 func findPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
 	additionalEdges map[Vertex][]*channeldb.ChannelEdgePolicy,
 	sourceNode *channeldb.LightningNode, target *btcec.PublicKey,
