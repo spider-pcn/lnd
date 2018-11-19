@@ -1,10 +1,11 @@
 package htlcswitch
 
 import (
+	"container/heap"
 	"sync"
 	"sync/atomic"
 	"time"
-
+	"fmt"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
@@ -31,9 +32,12 @@ type packetQueue struct {
 	// with the lock held.
 	queueLen int32 // To be used atomically.
 
+	// maximum queue length for overflow queue
+	maxQueueLen int32
+
 	streamShutdown int32 // To be used atomically.
 
-	queue []*htlcPacket
+	queue priorityQueue
 
 	wg sync.WaitGroup
 
@@ -55,11 +59,12 @@ type packetQueue struct {
 // newPacketQueue returns a new instance of the packetQueue. The maxFreeSlots
 // value should reflect the max number of HTLC's that we're allowed to have
 // outstanding within the commitment transaction.
-func newPacketQueue(maxFreeSlots int) *packetQueue {
+func newPacketQueue(maxFreeSlots int, maxQueueLen int32) *packetQueue {
 	p := &packetQueue{
 		outgoingPkts: make(chan *htlcPacket),
 		freeSlots:    make(chan struct{}, maxFreeSlots),
 		quit:         make(chan struct{}),
+		maxQueueLen:  maxQueueLen,
 	}
 	p.queueCond = sync.NewCond(&p.queueMtx)
 
@@ -119,9 +124,6 @@ func (p *packetQueue) packetCoordinator() {
 			default:
 			}
 		}
-
-		nextPkt := p.queue[0]
-
 		p.queueCond.L.Unlock()
 
 		// If there aren't any further messages to sent (or the link
@@ -130,20 +132,28 @@ func (p *packetQueue) packetCoordinator() {
 		// or for the link's htlcForwarder to wake up.
 		select {
 		case <-p.freeSlots:
+			debug_print("free slots indicated")
+			if (SPIDER_FLAG) {
+				// FIXME: just go to sleep for test.
+				time.Sleep(time.Millisecond * 200)
+			}
+			// Pop item with highest priority from the front of the queue. This will
+			// set us up for the next iteration. If the queue is empty at this point,
+			// then we'll block at the top.
+			// Note that the item must be retrived within queueCond lock as any new
+			// inserted item might have a higher priority than p.queue[0]
+			p.queueCond.L.Lock()
+			nextPkt := p.queue[0].packet
+			heap.Pop(&p.queue)
+			p.queueCond.L.Unlock()
 
 			select {
 			case p.outgoingPkts <- nextPkt:
-				// Pop the item off the front of the queue and
-				// slide down the reference one to re-position
-				// the head pointer. This will set us up for
-				// the next iteration.  If the queue is empty
-				// at this point, then we'll block at the top.
-				p.queueCond.L.Lock()
-				p.queue[0] = nil
-				p.queue = p.queue[1:]
+				// Only decrease the queueLen and totalHtlcAmt once the packet has been
+				// sent out
+				debug_print("going to remove nextPkt from the queue")
 				atomic.AddInt32(&p.queueLen, -1)
 				atomic.AddInt64(&p.totalHtlcAmt, int64(-nextPkt.amount))
-				p.queueCond.L.Unlock()
 			case <-p.quit:
 				return
 			}
@@ -163,9 +173,13 @@ func (p *packetQueue) AddPkt(pkt *htlcPacket) {
 	// the message queue, and increment the internal atomic for tracking
 	// the queue's length.
 	p.queueCond.L.Lock()
-	p.queue = append(p.queue, pkt)
-	atomic.AddInt32(&p.queueLen, 1)
-	atomic.AddInt64(&p.totalHtlcAmt, int64(pkt.amount))
+	if atomic.LoadInt32(&p.queueLen) < p.maxQueueLen {
+		heap.Push(&p.queue, makeNode(pkt))
+		atomic.AddInt32(&p.queueLen, 1)
+		atomic.AddInt64(&p.totalHtlcAmt, int64(pkt.amount))
+	} else {
+		log.Warnf("Packet %v dropped as overflow queue is full", pkt.incomingHTLCID)
+	}
 	p.queueCond.L.Unlock()
 
 	// With the message added, we signal to the msgConsumer that there are
@@ -183,6 +197,8 @@ func (p *packetQueue) SignalFreeSlot() {
 	// We'll only send over a free slot signal if the queue *is not* empty.
 	// Otherwise, it's possible that we attempt to overfill the free slots
 	// semaphore and block indefinitely below.
+	debug_print("signalFree slot!")
+	debug_print(fmt.Sprintf("queue len is %d\n", p.queueLen))
 	if atomic.LoadInt32(&p.queueLen) == 0 {
 		return
 	}
@@ -190,6 +206,7 @@ func (p *packetQueue) SignalFreeSlot() {
 	select {
 	case p.freeSlots <- struct{}{}:
 	case <-p.quit:
+		debug_print("they made us quit instead of signal free slot")
 		return
 	}
 }
