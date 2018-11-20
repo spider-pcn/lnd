@@ -111,6 +111,8 @@ type nodeConfig struct {
 	P2PPort  int
 	RPCPort  int
 	RESTPort int
+
+	Delay int
 }
 
 func (cfg nodeConfig) P2PAddr() string {
@@ -329,6 +331,13 @@ func (hn *HarnessNode) start(lndError chan<- error) error {
 		// Let the node keep a reference to this file, such
 		// that we can add to it if necessary.
 		hn.logFile = file
+	}
+
+	// we first apply delay config to the node
+	if hn.cfg.Delay != 0 {
+		delayCmdStr := fmt.Sprintf("sudo tcset lo --port %v --delay %vms --add", hn.cfg.P2PPort, hn.cfg.Delay)
+		delayCmd := exec.Command("sh", "-c", delayCmdStr)
+		delayCmd.Run()
 	}
 
 	if err := hn.cmd.Start(); err != nil {
