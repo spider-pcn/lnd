@@ -345,6 +345,29 @@ func NewChannelLink(cfg ChannelLinkConfig,
 	}
 }
 
+// This will just periodically check if the minimum amount to be sent from the
+// Queue is lower than the available balance, and then wake up the queue.
+func (l *channelLink) startQueueWatcher() {
+	// infinite loop.
+	for {
+		channelAmt := l.channel.AvailableBalance()
+		minOverflowAmt := l.overflowQueue.MinHtlcAmount()
+		// CHECK: is it enough to check that number of inflight htlc's are below
+		// threshold to signal to overflow queue? Should be the correct behaviour
+		// even if this makes us exceed MaxHTLCNumber for inflight htlc's as after
+		// popping the HTLC off the queue, all those relevant checks will be
+		// performed again, and if anything fails, the HTLC will be added back to
+		// the queue.
+		if (channelAmt > minOverflowAmt && minOverflowAmt != 0) {
+			// if no items in the queue, will not have any effect.
+			debug_print(fmt.Sprintf("signaling to the overflow queue, for channel\n: %s\n", l.shortChanID))
+			debug_print(fmt.Sprintf("current queue len at this node is: %d\n", l.overflowQueue.queueLen))
+			l.overflowQueue.SignalFreeSlot()
+		}
+		time.Sleep(50*time.Millisecond)
+	}
+}
+
 // A compile time check to ensure channelLink implements the ChannelLink
 // interface.
 var _ ChannelLink = (*channelLink)(nil)
@@ -359,7 +382,7 @@ func (l *channelLink) Start() error {
 		log.Warn(err)
 		return err
 	}
-
+	go l.startQueueWatcher()
 	log.Infof("ChannelLink(%v) is starting", l)
 
 	l.mailBox.ResetMessages()
@@ -762,7 +785,6 @@ func (l *channelLink) htlcManager() {
 		"bandwidth=%v", l.channel.ChannelPoint(), l.Bandwidth())
 	debug_print(fmt.Sprintf("HTLC manager for ChannelPoint(%v) started, "+
 		"bandwidth=%v\n", l.channel.ChannelPoint(), l.Bandwidth()))
-	fmt.Printf("ChannelLink(%v) starting", l)
 
 	// TODO(roasbeef): need to call wipe chan whenever D/C?
 
@@ -1433,10 +1455,6 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			"assigning index: %v", msg.PaymentHash[:], index)
 		debug_print(fmt.Sprintf("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v\n", msg.PaymentHash[:], index))
-		// this might be too early to signal free slot?
-		debug_print(fmt.Sprintf("signaling to the overflow queue, for channel\n: %s\n", l.shortChanID))
-		l.overflowQueue.SignalFreeSlot()
-		debug_print(fmt.Sprintf("current queue len at this node is: %d\n", l.overflowQueue.queueLen))
 
 	case *lnwire.UpdateFulfillHTLC:
 		debug_print(fmt.Sprintf("UpdateFulfillHTLC in chan: %s\n", l.shortChanID))
@@ -2165,7 +2183,6 @@ func (l *channelLink) processRemoteSettleFails(fwdPkg *channeldb.FwdPkg,
 			// notify the overflow queue that a spare spot has been
 			// freed up within the commitment state.
 			switchPackets = append(switchPackets, settlePacket)
-			//debug_print(fmt.Sprintf("l.SignalFreeSlot happening in settle, for chan id: %s\n", l.shortChanID))
 			l.overflowQueue.SignalFreeSlot()
 
 		// A failureCode message for a previously forwarded HTLC has
@@ -2196,7 +2213,6 @@ func (l *channelLink) processRemoteSettleFails(fwdPkg *channeldb.FwdPkg,
 			// notify the overflow queue that a spare spot has been
 			// freed up within the commitment state.
 			switchPackets = append(switchPackets, failPacket)
-			//debug_print(fmt.Sprintf("l.SignalFreeSlot happening in fail, for chan id: %s\n", l.shortChanID))
 			l.overflowQueue.SignalFreeSlot()
 		}
 	}

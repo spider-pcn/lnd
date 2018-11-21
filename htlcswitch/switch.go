@@ -366,7 +366,6 @@ func hash(s string) uint32 {
 func (s *Switch) updateFirebase() {
 	// Get the values to be updated
 	switchKey := fmt.Sprintf("%v", s)
-	//fmt.Println("original switchKey: ", switchKey)
 	switchKey = switchKey[0:100]
 	switchKey = fmt.Sprintf("%v", hash(switchKey))
 	debug_print("updated switchKey: " + switchKey)
@@ -578,10 +577,6 @@ func (s *Switch) forward(packet *htlcPacket) error {
 // signal.
 func (s *Switch) ForwardPackets(linkQuit chan struct{},
 	packets ...*htlcPacket) chan error {
-
-	//fmt.Println("attempt to print switch id")
-	//fmt.Println(s)
-	//fmt.Println(s.cfg.SelfKey)
 
 	var (
 		// fwdChan is a buffered channel used to receive err msgs from

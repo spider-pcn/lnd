@@ -24,6 +24,8 @@ type packetQueue struct {
 	// residing within the overflow queue. This value should only read or
 	// modified *atomically*.
 	totalHtlcAmt int64 // To be used atomically.
+	// Spider specific, used to decide when to signal to the overflow queue.
+	minHtlcAmt int64
 
 	// queueLen is an internal counter that reflects the size of the queue
 	// at any given instance. This value is intended to be use atomically
@@ -66,6 +68,8 @@ func newPacketQueue(maxFreeSlots int, maxQueueLen int32) *packetQueue {
 		freeSlots:    make(chan struct{}, maxFreeSlots),
 		quit:         make(chan struct{}),
 		maxQueueLen:  maxQueueLen,
+		// initialize with large value
+		minHtlcAmt:   0,
 	}
 	p.queueCond = sync.NewCond(&p.queueMtx)
 
@@ -134,10 +138,6 @@ func (p *packetQueue) packetCoordinator() {
 		select {
 		case <-p.freeSlots:
 			debug_print("free slots indicated")
-			if (SPIDER_FLAG) {
-				// FIXME: just go to sleep for test.
-				time.Sleep(time.Millisecond * 200)
-			}
 			// Pop item with highest priority from the front of the queue. This will
 			// set us up for the next iteration. If the queue is empty at this point,
 			// then we'll block at the top.
@@ -152,9 +152,18 @@ func (p *packetQueue) packetCoordinator() {
 			case p.outgoingPkts <- nextPkt:
 				// Only decrease the queueLen and totalHtlcAmt once the packet has been
 				// sent out
-				debug_print("going to remove nextPkt from the queue")
+				// FIXME: do we need these to be atomic? Since the queue is per channel
+				// link, I think only one thread can be updating this at a time?
 				atomic.AddInt32(&p.queueLen, -1)
 				atomic.AddInt64(&p.totalHtlcAmt, int64(-nextPkt.amount))
+				// update the minHtlc value
+				for i := 0; i < int(p.Length()); i++ {
+					curPkt := p.queue[i].packet
+					if (int64(curPkt.amount) < p.minHtlcAmt) {
+						p.minHtlcAmt = int64(curPkt.amount);
+					}
+				}
+
 			case <-p.quit:
 				return
 			}
@@ -178,6 +187,11 @@ func (p *packetQueue) AddPkt(pkt *htlcPacket) {
 		heap.Push(&p.queue, makeNode(pkt))
 		atomic.AddInt32(&p.queueLen, 1)
 		atomic.AddInt64(&p.totalHtlcAmt, int64(pkt.amount))
+		// does this update the minimum?
+		if (int64(pkt.amount) < p.minHtlcAmt || p.minHtlcAmt == 0) {
+			p.minHtlcAmt = int64(pkt.amount)
+			debug_print("min htlc amount updated to")
+		}
 	} else {
 		log.Warnf("Packet %v dropped as overflow queue is full", pkt.incomingHTLCID)
 	}
@@ -198,7 +212,6 @@ func (p *packetQueue) SignalFreeSlot() {
 	// We'll only send over a free slot signal if the queue *is not* empty.
 	// Otherwise, it's possible that we attempt to overfill the free slots
 	// semaphore and block indefinitely below.
-	debug_print("signalFree slot!")
 	debug_print(fmt.Sprintf("queue len is %d\n", p.queueLen))
 	if atomic.LoadInt32(&p.queueLen) == 0 {
 		return
@@ -223,4 +236,10 @@ func (p *packetQueue) Length() int32 {
 func (p *packetQueue) TotalHtlcAmount() lnwire.MilliSatoshi {
 	// TODO(roasbeef): also factor in fee rate?
 	return lnwire.MilliSatoshi(atomic.LoadInt64(&p.totalHtlcAmt))
+}
+
+// MinHtlcAmount is the minimum amount (in mSAT) of all HTLC's currently
+// residing within the overflow queue.
+func (p *packetQueue) MinHtlcAmount() lnwire.MilliSatoshi {
+	return lnwire.MilliSatoshi(atomic.LoadInt64(&p.minHtlcAmt))
 }
