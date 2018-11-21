@@ -23,6 +23,13 @@ import (
 	"github.com/lightningnetwork/lnd/ticker"
 )
 
+// Testing:
+import (
+  "gopkg.in/zabawaba99/firego.v1"
+	"hash/fnv"
+)
+
+
 const (
 	// DefaultFwdEventInterval is the duration between attempts to flush
 	// pending forwarding events to disk.
@@ -349,6 +356,38 @@ func (s *Switch) ProcessContractResolution(msg contractcourt.ResolutionMsg) erro
 	return nil
 }
 
+
+func hash(s string) uint32 {
+        h := fnv.New32a()
+        h.Write([]byte(s))
+        return h.Sum32()
+}
+
+func (s *Switch) updateFirebase() {
+	// Get the values to be updated
+	switchKey := fmt.Sprintf("%v", s)
+	//fmt.Println("original switchKey: ", switchKey)
+	switchKey = switchKey[0:100]
+	switchKey = fmt.Sprintf("%v", hash(switchKey))
+	debug_print("updated switchKey: " + switchKey)
+
+	for {
+		vals := make(map[string]string)
+		i := 0
+		f := firego.New("https://lnd-test-1dd52.firebaseio.com/" + switchKey, nil)
+		for _, l := range s.linkIndex {
+			i += 1
+			// for each switch+channelLink combination, we create a new key.
+			chanID := fmt.Sprintf("%v", l.ShortChanID())
+			bal := fmt.Sprintf("%v", l.Bandwidth())
+			vals[chanID] = bal
+		}
+		if err := f.Set(vals); err != nil {
+			fmt.Println("error when logging to firebase")
+		}
+		time.Sleep(1 * time.Second)
+	}
+}
 // SendHTLC is used by other subsystems which aren't belong to htlc switch
 // package in order to send the htlc update.
 func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
@@ -539,6 +578,10 @@ func (s *Switch) forward(packet *htlcPacket) error {
 // signal.
 func (s *Switch) ForwardPackets(linkQuit chan struct{},
 	packets ...*htlcPacket) chan error {
+
+	//fmt.Println("attempt to print switch id")
+	//fmt.Println(s)
+	//fmt.Println(s.cfg.SelfKey)
 
 	var (
 		// fwdChan is a buffered channel used to receive err msgs from
@@ -1742,6 +1785,9 @@ func (s *Switch) Start() error {
 		s.Stop()
 		log.Errorf("unable to reforward responses: %v", err)
 		return err
+	}
+	if SPIDER_FLAG {
+		go s.updateFirebase()
 	}
 
 	return nil

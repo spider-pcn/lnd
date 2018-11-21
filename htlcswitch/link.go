@@ -762,6 +762,7 @@ func (l *channelLink) htlcManager() {
 		"bandwidth=%v", l.channel.ChannelPoint(), l.Bandwidth())
 	debug_print(fmt.Sprintf("HTLC manager for ChannelPoint(%v) started, "+
 		"bandwidth=%v\n", l.channel.ChannelPoint(), l.Bandwidth()))
+	fmt.Printf("ChannelLink(%v) starting", l)
 
 	// TODO(roasbeef): need to call wipe chan whenever D/C?
 

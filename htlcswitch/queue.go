@@ -9,6 +9,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
+// FIXME: description needs to be updated with SPIDER's queue behaviour.
 // packetQueue is a goroutine-safe queue of htlc packets which over flow the
 // current commitment transaction. An HTLC will overflow the current commitment
 // transaction if one attempts to add a new HTLC to the state machine which
