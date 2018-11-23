@@ -1080,6 +1080,9 @@ out:
 
 			discStream.AddMsg(msg, p.quit)
 
+		case *lnwire.ProbeRouteChannelBalances:
+			p.server.respondToProbe(msg)
+
 		default:
 			peerLog.Errorf("unknown message %v received from peer "+
 				"%v", uint16(msg.MsgType()), p)
@@ -1236,6 +1239,13 @@ func messageSummary(msg lnwire.Message) string {
 			"stamp_range=%v", msg.ChainHash,
 			time.Unix(int64(msg.FirstTimestamp), 0),
 			msg.TimestampRange)
+
+	case *lnwire.ProbeRouteChannelBalances:
+		return fmt.Sprintf("probe_route=%v, current_hop_num=%v, "+
+			"sender=%v, is_reversed=%t, current_node=%v,"+
+			"balance_map=%v", msg.Route, msg.HopNum, msg.Sender,
+			msg.ProbeCompleted, msg.CurrentNode,
+			msg.RouterChannelBalMap)
 
 	}
 
