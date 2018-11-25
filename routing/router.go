@@ -1599,6 +1599,39 @@ func (r *ChannelRouter) SendPayment(payment *LightningPayment) ([32]byte, *Route
 func (r *ChannelRouter) SendToRoute(routes []*Route,
 	payment *LightningPayment) ([32]byte, *Route, error) {
 
+	fmt.Printf("In send to route")
+	// initiate probe here for the first route
+	// Craft a probe packet to send out along this route
+	senderNode := r.selfNode.PubKeyBytes
+	pathLength := len(routes[0].Hops) + 1 // because sender is ignored in hops
+	probePath := make([]lnwire.Vertex, pathLength)
+	probePath[0] = lnwire.Vertex(senderNode)
+
+	// nextHopMap is actually not populated, so use the hops themselves to construct
+	// the path for the probe
+	for i := 0; i < len(probePath)-1; i++ {
+		fmt.Printf("constructing path at hop=%d ", i)
+		nextHop := routes[0].Hops[i].Channel.Node.PubKeyBytes
+		fmt.Printf("next Hop is %v", nextHop)
+		probePath[i+1] = lnwire.Vertex(nextHop)
+	}
+
+	// fill in the fields for the probe message
+	probeMsg := &lnwire.ProbeRouteChannelBalances{
+		Route:               probePath,
+		HopNum:              0,
+		RouterChannelBalMap: make(map[lnwire.Vertex]lnwire.MilliSatoshi),
+		Sender:              lnwire.Vertex(senderNode),
+		ProbeCompleted:      false,
+		CurrentNode:         lnwire.Vertex(senderNode),
+	}
+	fmt.Printf("Probe message:%v", probeMsg)
+
+	// TODO: populate the first hop information and then send to neighbors
+	// TODO: add state to update when the probe is received back
+	// wait for some time before sending out the payment
+	// seems like a good first start
+
 	paySession := r.missionControl.NewPaymentSessionFromRoutes(
 		routes,
 	)
