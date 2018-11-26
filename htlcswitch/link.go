@@ -1104,8 +1104,6 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		// so we add the new HTLC to our local log, then update the
 		// commitment chains.
 		htlc.ChanID = l.ChanID()
-		//debug_print("htlcChanId is: ")
-		//debug_print(htlc.ChanID)
 		openCircuitRef := pkt.inKey()
 		index, err := l.channel.AddHTLC(htlc, &openCircuitRef)
 		if err != nil {
@@ -1131,17 +1129,11 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			case lnwallet.ErrBelowChanReserve:
 				// CHECK: if the flag is off, then will just fall through to the default case.
 				if (SPIDER_FLAG) {
-					l.infof("Downstream htlc add update with "+
-						"payment hash(%x) have been added to "+
-						"reprocessing queue, batch: %v because there wasn't enough balance on the channel",
-						htlc.PaymentHash[:],
-						l.batchCounter)
 					debug_print(fmt.Sprintf("Downstream htlc add update with "+
 						"payment hash(%x) have been added to "+
 						"reprocessing queue, batch: %v because there wasn't enough balance on the channel\n",
 						htlc.PaymentHash[:],
 						l.batchCounter))
-
 					l.overflowQueue.AddPkt(pkt)
 					return
 				}

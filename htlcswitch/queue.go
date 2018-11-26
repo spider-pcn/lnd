@@ -156,13 +156,16 @@ func (p *packetQueue) packetCoordinator() {
 				// link, I think only one thread can be updating this at a time?
 				atomic.AddInt32(&p.queueLen, -1)
 				atomic.AddInt64(&p.totalHtlcAmt, int64(-nextPkt.amount))
-				// update the minHtlc value
+				// update the minHtlcAmt. Lock the queue first, as minHtlcAmt is also
+				// updated when a new packet is added to the queue.
+				p.queueCond.L.Lock()
 				for i := 0; i < int(p.Length()); i++ {
 					curPkt := p.queue[i].packet
 					if (int64(curPkt.amount) < p.minHtlcAmt) {
 						p.minHtlcAmt = int64(curPkt.amount);
 					}
 				}
+				p.queueCond.L.Unlock()
 
 			case <-p.quit:
 				return

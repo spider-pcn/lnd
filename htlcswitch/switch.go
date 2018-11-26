@@ -23,7 +23,7 @@ import (
 	"github.com/lightningnetwork/lnd/ticker"
 )
 
-// Testing:
+// For statistics:
 import (
   "gopkg.in/zabawaba99/firego.v1"
 	"hash/fnv"
@@ -363,9 +363,20 @@ func hash(s string) uint32 {
         return h.Sum32()
 }
 
+/// Runs a while true loop in the background. Every 1 second, it updates the
+/// current balance for each of the links from this switch. 
 func (s *Switch) updateFirebase() {
-	// Get the values to be updated
+	// First, we need a unique identifier for the switch so we can use it as a
+	// key when logging the information online. There does not seem to be any
+	// unique identifier already specified (?), so we generate one based on the
+	// hash of the values of the fields within the switch (these should
+	// presumably always be unique?). We hash it because the values are a mix of
+	// various characters, and there was an error when trying to use that as a
+	// key directly in firebase.
+	// Note: %v just prints out the structs field values etc unless a specific
+	// representation is specified.
 	switchKey := fmt.Sprintf("%v", s)
+	// randomly truncate.
 	switchKey = switchKey[0:100]
 	switchKey = fmt.Sprintf("%v", hash(switchKey))
 	debug_print("updated switchKey: " + switchKey)
@@ -373,10 +384,11 @@ func (s *Switch) updateFirebase() {
 	for {
 		vals := make(map[string]string)
 		i := 0
+		// FIXME: use authentication
 		f := firego.New("https://lnd-test-1dd52.firebaseio.com/" + switchKey, nil)
 		for _, l := range s.linkIndex {
 			i += 1
-			// for each switch+channelLink combination, we create a new key.
+			// for each switch + channelLink combination, we create a new key.
 			chanID := fmt.Sprintf("%v", l.ShortChanID())
 			bal := fmt.Sprintf("%v", l.Bandwidth())
 			vals[chanID] = bal
