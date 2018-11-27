@@ -4024,12 +4024,24 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 								printRoute(payIntents[i][0], payresp.PaymentRoute.Hops)
 								fmt.Printf("\n")
 								mux.Unlock()
-							}
-							sendok <- 1
+							    sendok <- 0 // success
+							} else if err != nil {
+                                sendok <- 1 // local api failure
+                            } else if payresp.PaymentError != "" {
+                                sendok <- 2 // payment failure
+                            }
 						}(i)
 						select {
-						case <-sendok:
+                        case s := <-sendok:
+                            if s != 0 {
+                                mux.Lock()
+								fmt.Printf("%v->%v: failed\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+                                mux.Unlock()
+                            }
 						case <-timeout:
+                            mux.Lock()
+							fmt.Printf("%v->%v: timeout\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+                            mux.Unlock()
 						}
 					}(i)
 				}
