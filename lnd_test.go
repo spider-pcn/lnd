@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"sync"
 
 	"sync/atomic"
 
@@ -34,6 +35,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -809,7 +811,6 @@ out:
 		select {
 		case graphUpdate := <-subscription.updateChan:
 			for _, update := range graphUpdate.ChannelUpdates {
-
 				// For each expected update, check if it matches
 				// the update we just received.
 				for i, exp := range expUpdates {
@@ -3642,6 +3643,462 @@ func testMultiHopPayments(net *lntest.NetworkHarness, t *harnessTest) {
 	closeChannelAndAssert(ctxt, t, net, dave, chanPointDave, false)
 	ctxt, _ = context.WithTimeout(ctxb, timeout)
 	closeChannelAndAssert(ctxt, t, net, carol, chanPointCarol, false)
+}
+
+func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
+	ctxb := context.Background()
+	
+	// Set channel capacity
+	// chanAmt: the total amount of money that we put into the channel
+	// pushAmt: the money that we push to the remote end
+	// Note that there is a fee to establish the channel, so the total usable amount
+	// is less than chanAmt.
+	const chanAmt = btcutil.Amount(209050)
+	const pushAmt = btcutil.Amount(100000)
+
+	// Set transaction fees
+	// We want the fee to be absolutely zero.
+	// Note that vanilla LND does now allow zero fee. Modification has been done.
+	baseFee := int64(0)
+	feeRate := 0
+	
+	// Set RPC call timeout
+	// It will be used when we make RPC calls. 
+	timeout := time.Duration(time.Second * 15)
+
+	// Define the topology
+	numNodes := 5									// number of nodes in the network
+	nodes := make([]*lntest.HarnessNode, numNodes)	// create a list for nodes
+	nodeNames := []string{"1", "2", "3", "4", "5"}	// name of the nodes
+	nodeDelays := []int{100, 200, 50, 50, 50}
+
+	numChannels := 6								// number of channels in the network
+	// define the channels by specifying both ends (as index of node)
+	connections := [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 0}, {1, 3}}
+
+	// Define the payment demand
+	numPayIntents := 8								// number of payment demands
+	// define the payment demands by specifying the sender and receiver (as index of node)
+	payIntents := [][]int{{0, 1}, {0, 4}, {1, 3}, {2, 1}, {2, 4}, {3, 0}, {3, 2}, {4, 2}}
+	// define the rate (number of tx per unit time) of payment demands
+	payRates := []int{1, 1, 2, 1, 2, 2, 2, 1}
+
+	// Configure simulation parameters
+	const baseRate = 5		// num of payments per second for payment demands w/ payRate=1
+	const paymentAmt = 5000	// size of each transaction
+	const testTime = 60		// duration of the simulation
+
+	// Construct the nodes
+	for i := 0; i < numNodes; i++ {
+		nd, err := net.NewNode(nodeNames[i], nil, nodeDelays[i])
+		nodes[i] = nd
+		if err != nil {
+			t.Fatalf("unable to create new node: %v", err)
+		}
+		defer shutdownAndAssert(net, t, nodes[i])
+	}
+
+	// Create network connection between nodes in the test framework
+	for _, conn := range connections {
+		if err := net.ConnectNodes(ctxb, nodes[conn[0]], nodes[conn[1]]); err != nil {
+			t.Fatalf("unable to connect %v to %v: %v",
+				nodeNames[conn[0]], nodeNames[conn[1]], err)
+		}
+	}
+
+	// Send the nodes initial funds
+	for i := 0; i < numNodes; i++ {
+		err := net.SendCoins(ctxb, btcutil.SatoshiPerBitcoin, nodes[i])
+		if err != nil {
+			t.Fatalf("unable to send coins to %v: %v", nodeNames[i], err)
+		}
+	}
+
+	// Make datastructures to store channel info
+	chanPoints := make([]*lnrpc.ChannelPoint, numChannels)
+	chanTXIDs := make([]*chainhash.Hash, numChannels)
+	chanFundPoints := make([]*wire.OutPoint, numChannels)
+	// channel ID is the identifier of a channel
+	chanIDs := make([]uint64, numChannels)
+
+	// Create channels
+	for i, conn := range connections {
+		ctxt, _ := context.WithTimeout(ctxb, timeout)
+		chanPoints[i] = openChannelAndAssert(
+			ctxt, t, net, nodes[conn[0]], nodes[conn[1]],
+			lntest.OpenChannelParams{
+				Amt: chanAmt,
+				PushAmt: pushAmt,
+				MinHtlc: 0,
+			},
+		)
+		txidHash, err := getChanPointFundingTxid(chanPoints[i])
+		if err != nil {
+			t.Fatalf("unable to get txid: %v", err)
+		}
+		chanTXIDs[i], err = chainhash.NewHash(txidHash)
+		if err != nil {
+			t.Fatalf("unable to create sha hash: %v", err)
+		}
+		chanFundPoints[i] = &wire.OutPoint{
+			Hash:  *chanTXIDs[i],
+			Index: chanPoints[i].OutputIndex,
+		}
+
+		// Until now the channel should have been created. We would like to save its
+		// channel ID. Sadly it is not provided during channel creation, so I have to
+		// manually request a list of channels, find the one that we have not seen
+		// before, and add it to the chanIDs list.
+		listReq := &lnrpc.ListChannelsRequest{}
+		listResp, err := nodes[conn[0]].ListChannels(ctxb, listReq)
+		localChannels := listResp.Channels
+		for _, ch := range localChannels {
+			chid := ch.ChanId
+			// We are looking for the one that we have not seen before.
+			found := false
+			for _, id := range chanIDs {
+				if chid == id {
+					found = true
+				} 
+			}
+			if found == false {
+				chanIDs[i] = chid
+			}
+		}
+	}
+	
+	// Wait for all nodes to have seen all channels.
+	for _, chanPoint := range chanPoints {
+		for i, node := range nodes {
+			txidHash, err := getChanPointFundingTxid(chanPoint)
+			if err != nil {
+				t.Fatalf("unable to get txid: %v", err)
+			}
+			txid, e := chainhash.NewHash(txidHash)
+			if e != nil {
+				t.Fatalf("unable to create sha hash: %v", e)
+			}
+			point := wire.OutPoint{
+				Hash:  *txid,
+				Index: chanPoint.OutputIndex,
+			}
+
+			ctxt, _ := context.WithTimeout(ctxb, timeout)
+			err = node.WaitForNetworkChannelOpen(ctxt, chanPoint)
+			if err != nil {
+				t.Fatalf("%s(%d): timeout waiting for "+
+					"channel(%s) open: %v", nodeNames[i],
+					node.NodeID, point, err)
+			}
+		}
+	}
+
+	// Wait for nodes to receive the channel edge from the funding manager.
+	ctxt, _ := context.WithTimeout(ctxb, timeout)
+	for i := 0; i < numChannels; i++ {
+		if err := nodes[connections[i][0]].WaitForNetworkChannelOpen(ctxt, chanPoints[i]); err != nil {
+			t.Fatalf("%v didn't see the %v->%v channel before "+
+				"timeout: %v", nodeNames[connections[i][0]], 
+				nodeNames[connections[i][0]], nodeNames[connections[i][1]], err)
+		}
+		if err := nodes[connections[i][1]].WaitForNetworkChannelOpen(ctxt, chanPoints[i]); err != nil {
+			t.Fatalf("%v didn't see the %v->%v channel before "+
+				"timeout: %v", nodeNames[connections[i][1]], 
+				nodeNames[connections[i][1]], nodeNames[connections[i][0]], err)
+		}
+	}
+
+	// Update channel policy to eliminate fees, then wait for everyone to see the update.
+	// I was not able to find a way to specify fees during channel creation, so I have to
+	// manually set it after the channel has been created.
+	timeLockDelta := uint32(144)	// HTLC timelock delta. This value is the default value.
+
+	// Expected channel forwarding policy that we will match against.
+	expectedPolicy := &lnrpc.RoutingPolicy{
+		FeeBaseMsat:      baseFee,
+		FeeRateMilliMsat: int64(feeRate * testFeeBase),
+		TimeLockDelta:    timeLockDelta,
+		MinHtlc:          0, 		// We set it to zero during channel creation.
+	}
+
+	// Each node will subscribe to graph change event.
+	graphSubs := make([]graphSubscription, numNodes)
+	for i := 0; i < numNodes; i++ {
+		ctxt, _ := context.WithTimeout(ctxb, timeout)
+		graphSubs[i] = subscribeGraphNotifications(t, ctxt, nodes[i])
+		defer close(graphSubs[i].quit)
+	}
+
+	// For each channel, both ends will see an chanUpdate message. So we end up with numChannels * 2.
+	expectedMessages := make([]expectedChanUpdate, numChannels * 2)
+	for i := 0; i < numChannels; i++ {
+		expectedMessages[i * 2] = expectedChanUpdate{
+			nodes[connections[i][0]].PubKeyStr, expectedPolicy, chanPoints[i]}
+		expectedMessages[i * 2 + 1] = expectedChanUpdate{
+			nodes[connections[i][1]].PubKeyStr, expectedPolicy, chanPoints[i]}	
+	} 
+
+	// Actually update the channel policy here. We need to do this for every node, since each
+	// node manages its own forwarding policy (fees, etc.)
+	for i := 0; i < numChannels; i++ {
+		ctxt, _ = context.WithTimeout(ctxb, timeout)
+		updateFeeReq := &lnrpc.PolicyUpdateRequest{
+			BaseFeeMsat:   baseFee,
+			FeeRate:       float64(feeRate),
+			TimeLockDelta: timeLockDelta,
+			Scope: &lnrpc.PolicyUpdateRequest_ChanPoint{
+				ChanPoint: chanPoints[i],
+			},
+		}
+		if _, err := nodes[connections[i][0]].UpdateChannelPolicy(ctxt, updateFeeReq); err != nil {
+			t.Fatalf("unable to update chan policy: %v", err)
+		}
+		if _, err := nodes[connections[i][1]].UpdateChannelPolicy(ctxt, updateFeeReq); err != nil {
+			t.Fatalf("unable to update chan policy: %v", err)
+		}
+	}
+
+	// Wait for everyone to receive the channel update.
+	for i := 0; i < numNodes; i++ {
+		waitForChannelUpdate(t, graphSubs[i], expectedMessages)
+	}
+
+	// Initialize seed random in order to generate invoices.
+	prand.Seed(time.Now().UnixNano())
+
+	// Initialize waitgroups. We will wait for every payment goroutine to finish before exiting
+	var wg sync.WaitGroup
+	var tranwg sync.WaitGroup
+	wg.Add(numPayIntents)
+
+	// Counters for number of success/total transactions, for each payment demand
+	atomicSucceeded := make([]uint64, numPayIntents)
+	atomicTried := make([]uint64, numPayIntents)
+
+	// We need a mutex here: fmt.Println is not concurrency-safe
+	var mux sync.Mutex
+
+	// Helper function to print success rates, etc.
+	printStats := func() {
+		succeeded := make([]uint64, numPayIntents)
+		tried := make([]uint64, numPayIntents)
+		var totSucceeded uint64 = 0
+		var totTried uint64 = 0
+		for i := 0; i < numPayIntents; i++ {
+			succeeded[i] = atomic.LoadUint64(&atomicSucceeded[i])
+			tried[i] = atomic.LoadUint64(&atomicTried[i])
+			totSucceeded += succeeded[i]
+			totTried += tried[i]
+		}
+		mux.Lock()
+		fmt.Printf("%v transactions performed in total, %v succeeded\n", totTried, totSucceeded)
+		fmt.Printf("Rate: %.2f%%\n", 100.0 * float64(totSucceeded) / float64(totTried))
+		for i := 0; i < numPayIntents; i++ {
+			rt := 100.0 * float64(succeeded[i]) / float64(tried[i])
+			fmt.Printf("%v -> %v: %.2f%%\t(%v/%v)\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]], rt,
+				succeeded[i], tried[i])
+		}
+		mux.Unlock()
+	}
+
+	// Helper function to lookup node name based on channel id
+	lookupChan := func(chanID uint64) (string, string) {
+		for i := 0; i < numChannels; i++ {
+			if chanIDs[i] == chanID {
+				start := nodeNames[connections[i][0]]
+				end := nodeNames[connections[i][1]]
+				return start, end
+			}
+		}
+		return "U", "U"	// U for unknown
+	}
+
+	// Helper function to dump channel info
+	printChan := func(chanIdx int) {
+		listReq := &lnrpc.ListChannelsRequest{}
+		listResp, _ := nodes[connections[chanIdx][0]].ListChannels(ctxb, listReq)
+		localChannels := listResp.Channels
+		for _, ch := range localChannels {
+			if ch.ChanId == chanIDs[chanIdx] {
+				mux.Lock()
+				fmt.Printf("%v->%v stat: Loc. Bal. %v, Rmt. Bal. %v, Sent %v, Rcvd %v\n",
+					nodeNames[connections[chanIdx][0]], nodeNames[connections[chanIdx][1]],
+					ch.LocalBalance, ch.RemoteBalance, ch.TotalSatoshisSent, ch.TotalSatoshisReceived)
+				mux.Unlock()
+			}
+		}
+	}
+
+	printRoute := func(startIdx int, hops []*lnrpc.Hop) {
+		lastNodeName := nodeNames[startIdx]
+		for hopIdx, hop := range hops {
+			start, end := lookupChan(hop.ChanId)
+			if start == lastNodeName {
+				lastNodeName = end
+				if hopIdx == 0 {
+					fmt.Printf("%v->%v", start, end)
+				} else {
+					fmt.Printf("->%v", end)
+				}
+			} else {
+				lastNodeName = start
+				if hopIdx == 0 {
+					fmt.Printf("%v->%v", end, start)
+				} else {
+					fmt.Printf("->%v", start)
+				}
+			}
+		}
+	}
+
+	// Send payments.
+
+	// For each payment demand, we create a "dispatcher" goroutine to create transactions for that demand.
+	// Then we use channels to control when they can fire a payment. Channels are filled by another goroutine
+	// that periodically sends to those channels.
+
+	// Channels to control payment goroutines.
+	var paymentTick = make([]chan int, numPayIntents)
+	for i := range paymentTick {
+   		paymentTick[i] = make(chan int, 1)
+	}
+
+	// Channels to signal the end of the experiment
+	var paymentStop = make([]chan int, numPayIntents)
+	for i := range paymentTick {
+   		paymentStop[i] = make(chan int, 1)
+	}
+	
+	// Dispatcher goroutines
+	for i := 0; i < numPayIntents; i++ {
+		go func(i int) {
+			defer wg.Done()
+			for {
+				// We either timeout, or wait for the next tick.
+				select {
+				case <-paymentStop[i]:
+					return
+				case <-paymentTick[i]:
+					// We create a goroutine for every single payment, and track the status of the payment here
+					go func(i int) {
+						// The payment will timeout after 20 seconds.
+						timeout := time.After(time.Duration(20) * time.Second)
+						// One more goroutine to wait for
+						tranwg.Add(1)
+						atomic.AddUint64(&atomicTried[i], 1)
+						defer tranwg.Done()
+						// Below is timeout mechanism. The actual work is done in (yet) another goroutine, and
+						// in the current goroutine we simply wait for either timeout or the sub-goroutine to
+						// finish. Whichever comes first, we will return.
+						sendok := make(chan int, 1)
+						go func(i int) {
+							// Generate invoice and add that invoice to target node.
+							preimage := make([]byte, 32)
+							_, err := rand.Read(preimage)
+							if err != nil {
+								t.Fatalf("unable to generate preimage: %v", err)
+							}
+							invoiceReq := &lnrpc.Invoice{
+								Memo:      "testing",
+								RPreimage: preimage,
+								Value:     int64(paymentAmt),
+							}
+							resp, err := nodes[payIntents[i][1]].AddInvoice(ctxb, invoiceReq)
+							if err != nil {
+								t.Fatalf("unable to add invoice: %v", err)
+							}
+
+							// Create a send request and send it.
+							invoice := resp.PaymentRequest
+							sendReq := &lnrpc.SendRequest{
+								PaymentRequest: invoice,
+								SpiderAlgo: routing.ShortestPath,
+							}
+							payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
+
+							// Track payment status. Success or not?
+							if err == nil && payresp.PaymentError == "" {
+								atomic.AddUint64(&atomicSucceeded[i], 1)
+								mux.Lock()
+								fmt.Printf("%v->%v: ", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+								printRoute(payIntents[i][0], payresp.PaymentRoute.Hops)
+								fmt.Printf("\n")
+								mux.Unlock()
+							    sendok <- 0 // success
+							} else if err != nil {
+                                sendok <- 1 // local api failure
+                            } else if payresp.PaymentError != "" {
+                                sendok <- 2 // payment failure
+                            }
+						}(i)
+						select {
+                        case s := <-sendok:
+                            if s != 0 {
+                                mux.Lock()
+								fmt.Printf("%v->%v: failed\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+                                mux.Unlock()
+                            }
+						case <-timeout:
+                            mux.Lock()
+							fmt.Printf("%v->%v: timeout\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+                            mux.Unlock()
+						}
+					}(i)
+				}
+			}
+		}(i)
+	}
+
+	// Control goroutine
+	go func() {
+		// Create a list of payments that we will issue every round
+		var paymentOrder []int
+		for idx, rt := range(payRates) {
+			for i := 0; i < rt; i++ {
+				paymentOrder = append(paymentOrder, idx)
+			}
+		}
+		numPaymentEachRound := len(paymentOrder)
+		roundInterval := 1000000.0 / baseRate	// interval between firing payments
+		
+		tick := time.Tick(time.Duration(roundInterval) * time.Microsecond)
+		experimentTimeout := time.After(time.Duration(testTime) * time.Second)
+		for {
+			select {
+			// If the experiment is over, signal each dispatcher goroutines.
+			case <-experimentTimeout:
+				for i := 0; i < numPayIntents; i++ {
+					paymentStop[i] <- 1
+				}
+				return
+			// If the next round comes
+			case <-tick:
+				prand.Shuffle(numPaymentEachRound, func(i, j int) {
+					paymentOrder[i], paymentOrder[j] = paymentOrder[j], paymentOrder[i]
+				})
+				for _, idx := range(paymentOrder) {
+					paymentTick[idx] <- 1
+				}
+			}
+		}
+	}()
+	
+	// Wait for the goroutines that we created.
+	wg.Wait()
+	tranwg.Wait()
+
+	printStats()
+	for cidx, _ := range(chanIDs) {
+		printChan(cidx)
+	}
+
+	// Finally, immediately close the channel.
+	/*
+	ctxt, _ = context.WithTimeout(ctxb, timeout)
+	for i := 0; i < numChannels; i++ {
+		closeChannelAndAssert(ctxt, t, net, nodes[connections[i][0]], chanPoints[i], false)
+	}
+	*/
 }
 
 // testSingleHopSendToRoute tests that payments are properly processed
@@ -12015,6 +12472,10 @@ type testCase struct {
 }
 
 var testsCases = []*testCase{
+	{
+		name: "test spider routing",
+		test: testSpiderShortestPath,
+	},
 	{
 		name: "onchain fund recovery",
 		test: testOnchainFundRecovery,

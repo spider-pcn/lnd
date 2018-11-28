@@ -331,6 +331,34 @@ func (p *paymentSession) ReportChannelFailure(e uint64) {
 	p.mc.Unlock()
 }
 
+func (p *paymentSession) RequestShortestPath(payment *LightningPayment,
+	height uint32, finalCltvDelta uint16) (*Route, error) {
+
+	// Taking into account this prune view, we'll attempt to locate a path
+	// to our destination, respecting the recommendations from
+	// missionControl.
+	path, err := findSpiderShortestPath(nil, p.mc.graph, p.additionalEdges, 
+		p.mc.selfNode, payment.Target, payment.Amount)
+	if err != nil {
+		return nil, err
+	}
+
+	// With the next candidate path found, we'll attempt to turn this into
+	// a route by applying the time-lock and fee requirements.
+	sourceVertex := Vertex(p.mc.selfNode.PubKeyBytes)
+	route, err := newRoute(
+		payment.Amount, payment.FeeLimit, sourceVertex, path, height,
+		finalCltvDelta,
+	)
+	if err != nil {
+		// TODO(roasbeef): return which edge/vertex didn't work
+		// out
+		return nil, err
+	}
+
+	return route, err
+}
+
 // RequestRoute returns a route which is likely to be capable for successfully
 // routing the specified HTLC payment to the target node. Initially the first
 // set of paths returned from this method may encounter routing failure along
