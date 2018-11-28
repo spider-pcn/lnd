@@ -107,10 +107,9 @@ func TestSpiderInsufficientFunds(t *testing.T) {
 	// * Bob trying to add HTLC add request in Bob<->Carol channel.
 	// * Not enough funds for that, so it gets added to overFlowQueue in
 	// Bob->Carol channel.
-	// * Carol sends Bob money.
-	// * Bob -> Carol channel now has enough money, and the Bob -> Carol
-	// payment should succeed, thereby letting the Alice -> Carol payment to
-	// succeed as well.
+	// * Carol sends Bob money, but it is not enough to cover Alice -> Carol
+	// payment.
+	// * Alice -> Carol payment should time out.
 	c := make(chan error)
 	go SendMoneyWithDelay(n, 4 * btcutil.SatoshiPerBitcoin, n.aliceServer, n.carolServer, 0, c, n.firstBobChannelLink, n.carolChannelLink)
 	// carol -> bob after a 2 seconds delay
