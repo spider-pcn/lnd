@@ -17,12 +17,12 @@ type ProbeRouteChannelBalances struct {
 
 	// HopNum denotes where in the probe we are and is helpful to directly
 	// find the Next Hop
-	HopNum int
+	HopNum uint32
 
 	// routerChannelBalMap maps a router to the balance on the outgoing
 	// channel to the next hop as specified by the router
 	// this is filled as the probe message propagates
-	RouterChannelBalMap map[Vertex]MilliSatoshi
+	RouterChannelBalances []MilliSatoshi
 
 	// sender denotes the sender of the probe message; used to send the information
 	// back to the sender after it is filled
@@ -31,7 +31,7 @@ type ProbeRouteChannelBalances struct {
 	// ProbeCompleted denotes whether or not all the information for all
 	// channels along the path has been collected
 	// if true the probe is on its way back to the sender
-	ProbeCompleted bool
+	ProbeCompleted uint8
 
 	// CurrentNode denotes the current Node in the path that the probe is traversing
 	// CurrentNode = Route[HopNum]
@@ -53,9 +53,9 @@ var _ Message = (*ProbeRouteChannelBalances)(nil)
 // This is part of the lnwire.Message interface.
 func (q *ProbeRouteChannelBalances) Decode(r io.Reader, pver uint32) error {
 	return readElements(r,
-		q.Route[:],
+		&q.Route,
 		&q.HopNum,
-		&q.RouterChannelBalMap,
+		&q.RouterChannelBalances,
 		&q.Sender,
 		&q.ProbeCompleted,
 		&q.CurrentNode,
@@ -68,9 +68,9 @@ func (q *ProbeRouteChannelBalances) Decode(r io.Reader, pver uint32) error {
 // This is part of the lnwire.Message interface.
 func (q *ProbeRouteChannelBalances) Encode(w io.Writer, pver uint32) error {
 	return writeElements(w,
-		q.Route[:],
+		q.Route,
 		q.HopNum,
-		q.RouterChannelBalMap,
+		q.RouterChannelBalances,
 		q.Sender,
 		q.ProbeCompleted,
 		q.CurrentNode,
@@ -78,7 +78,7 @@ func (q *ProbeRouteChannelBalances) Encode(w io.Writer, pver uint32) error {
 }
 
 // MsgType returns the integer uniquely identifying this message type on the
-// wire.
+// wire
 //
 // This is part of the lnwire.Message interface.
 func (q *ProbeRouteChannelBalances) MsgType() MessageType {
@@ -92,7 +92,7 @@ func (q *ProbeRouteChannelBalances) MsgType() MessageType {
 func (q *ProbeRouteChannelBalances) MaxPayloadLength(uint32) uint32 {
 	// 32 + 4 + 4
 	// TODO: fix this vibhaa
-	return 40
+	return 65533
 }
 
 //TODO: define vertex

@@ -515,8 +515,9 @@ func newServer(listenAddrs []net.Addr, chanDB *channeldb.DB, cc *chainControl,
 				firstHop, htlcAdd, errorDecryptor,
 			)
 		},
-		ChannelPruneExpiry: time.Duration(time.Hour * 24 * 14),
-		GraphPruneInterval: time.Duration(time.Hour),
+		SendProbeToFirstHop: s.RespondToProbeInProgress,
+		ChannelPruneExpiry:  time.Duration(time.Hour * 24 * 14),
+		GraphPruneInterval:  time.Duration(time.Hour),
 		QueryBandwidth: func(edge *channeldb.ChannelEdgeInfo) lnwire.MilliSatoshi {
 			// If we aren't on either side of this edge, then we'll
 			// just thread through the capacity of the edge as we
@@ -1006,36 +1007,38 @@ func (s *server) Start() error {
 // if this node is the sender, needs to process the balance information and send
 // it back to whoever initiated it
 func (s *server) respondToProbe(msg *lnwire.ProbeRouteChannelBalances) {
-	if msg.ProbeCompleted {
-		if msg.HopNum+1 < len(msg.Route) {
-			s.RespondToCompletedProbe(msg)
+	srvrLog.Infof("Responding to probe at %v", s.identityPriv.PubKey().SerializeCompressed())
+
+	if msg.ProbeCompleted != 0 {
+		if int(msg.HopNum)+1 < len(msg.Route) {
+			s.ForwardCompletedProbe(msg)
+			srvrLog.Infof("rev direction processing probe at hopnum=%d", msg.HopNum)
 		} else {
-			// probe finished propagating - idk what the sender does
-			// the sender should be waiting on this result technically
-			// TODO:
-			//probeChannel <- msg
+			//TODO:  probe finished propagating
+			// update the table with minimum balance for the path
+			srvrLog.Infof("finished probe")
 
 		}
 	} else {
-		if msg.HopNum+1 < len(msg.Route) {
+		if int(msg.HopNum)+1 < len(msg.Route) {
 			s.RespondToProbeInProgress(msg)
+			srvrLog.Infof("forward direction processing probe at hopnum=%d", msg.HopNum)
 		} else {
 			s.ConvertProbeToCompletedProbe(msg)
+			srvrLog.Infof("forward direction finished processing probe at hopnum=%d", msg.HopNum)
 		}
 	}
-
-	// send message to nextHop
-	//s.SendToPeer(nextHop, newMsg)
 }
 
-// respondToProbeInProgress is a helper function to respond to probes
+// RespondToProbeInProgress is a helper function to respond to probes
 // which haven't gone all the way to the receiver yet, and are in the middle
 // of the path. This finds the balance on the outgoing channel
-// and appends it to map in the message itself
+// and appends it to map in the message itself before forwading the message
+// to the next hop
 func (s *server) RespondToProbeInProgress(msg *lnwire.ProbeRouteChannelBalances) {
 	nextHop := msg.Route[msg.HopNum+1]
 
-	// find the balance on this channel
+	// find the link between this node and the next hop and its balance
 	var nextChannelBalance lnwire.MilliSatoshi
 	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
 	link := links[0] //TODO: check this @vibhaa
@@ -1054,34 +1057,32 @@ func (s *server) RespondToProbeInProgress(msg *lnwire.ProbeRouteChannelBalances)
 		// for the available bandwidth for the link.
 		nextChannelBalance = link.Bandwidth()
 	}
-	msg.RouterChannelBalMap[msg.CurrentNode] = nextChannelBalance
+	msg.RouterChannelBalances[msg.HopNum] = nextChannelBalance
 
-	// create the message to send to next hop
-	//nextHop = msg.Route[msg.HopNum+1]
+	// update the message before sending to next hop
 	msg.CurrentNode = nextHop
 	msg.HopNum += 1
 
 	link.Peer().SendMessage(false, msg)
 }
 
-// respondToCompletedProbe is a helper function to respond to a completed probe
-// that hasn't gone all the way to the sender yet,
-func (s *server) RespondToCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
-	// create the message to send to next hop
+// ForwardCompletedProbe is a helper function to forward a completed probe
+// towards the sender
+func (s *server) ForwardCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
 	nextHop := msg.Route[msg.HopNum+1]
 	msg.CurrentNode = nextHop
 	msg.HopNum += 1
 
+	// find the link to the next hop to send message on
 	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
 	link := links[0] //TODO: check this @vibhaa
 
 	if err == nil {
 		link.Peer().SendMessage(false, msg)
 	}
-	//return msg, nextHop
 }
 
-// convertProbeToCompletedProbe is a helper function to flip the direction of the probe
+// ConvertProbeToCompletedProbe is a helper function to flip the direction of the probe
 // and mark it completed once the receiver has seen the probe
 func (s *server) ConvertProbeToCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
 	reversedRoute := msg.Route
@@ -1090,12 +1091,13 @@ func (s *server) ConvertProbeToCompletedProbe(msg *lnwire.ProbeRouteChannelBalan
 		reversedRoute[i], reversedRoute[opp] = reversedRoute[opp], reversedRoute[i]
 	}
 	msg.Route = reversedRoute
-	msg.ProbeCompleted = true
+	msg.ProbeCompleted = 1
 
 	msg.HopNum = 1
 	nextHop := msg.Route[msg.HopNum]
 	msg.CurrentNode = nextHop
 
+	// find the appropriate link to the next hop and send message out
 	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
 	link := links[0] //TODO: check this @vibhaa
 

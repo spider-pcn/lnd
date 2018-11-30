@@ -112,6 +112,19 @@ func writeElement(w io.Writer, element interface{}) error {
 		if _, err := w.Write(b[:]); err != nil {
 			return err
 		}
+	case []MilliSatoshi:
+		var b [2]byte
+		numElem := uint16(len(e))
+		binary.BigEndian.PutUint16(b[:], numElem)
+		if _, err := w.Write(b[:]); err != nil {
+			return err
+		}
+
+		for _, elem := range e {
+			if err := writeElement(w, elem); err != nil {
+				return err
+			}
+		}
 	case MilliSatoshi:
 		var b [8]byte
 		binary.BigEndian.PutUint64(b[:], uint64(e))
@@ -209,6 +222,25 @@ func writeElement(w io.Writer, element interface{}) error {
 		if _, err := w.Write(e[:]); err != nil {
 			return err
 		}
+	case []Vertex:
+		var b [2]byte
+		numVertices := uint16(len(e))
+		binary.BigEndian.PutUint16(b[:], numVertices)
+		if _, err := w.Write(b[:]); err != nil {
+			return err
+		}
+
+		for _, vertex := range e {
+			if err := writeElement(w, vertex); err != nil {
+				return err
+			}
+		}
+
+	case Vertex:
+		if _, err := w.Write(e[:]); err != nil {
+			return err
+		}
+
 	case []byte:
 		if _, err := w.Write(e[:]); err != nil {
 			return err
@@ -477,6 +509,26 @@ func readElement(r io.Reader, element interface{}) error {
 			return err
 		}
 		*e = binary.BigEndian.Uint64(b[:])
+
+	case *[]MilliSatoshi:
+		var l [2]byte
+		if _, err := io.ReadFull(r, l[:]); err != nil {
+			return err
+		}
+		numElem := binary.BigEndian.Uint16(l[:])
+
+		var balances []MilliSatoshi
+		if numElem > 0 {
+			balances = make([]MilliSatoshi, numElem)
+			for i := 0; i < int(numElem); i++ {
+				if err := readElement(r, &balances[i]); err != nil {
+					return err
+				}
+			}
+		}
+
+		*e = balances
+
 	case *MilliSatoshi:
 		var b [8]byte
 		if _, err := io.ReadFull(r, b[:]); err != nil {
@@ -532,6 +584,31 @@ func readElement(r io.Reader, element interface{}) error {
 		if _, err := io.ReadFull(r, e[:]); err != nil {
 			return err
 		}
+
+	case *[]Vertex:
+		var l [2]byte
+		if _, err := io.ReadFull(r, l[:]); err != nil {
+			return err
+		}
+		numVertices := binary.BigEndian.Uint16(l[:])
+
+		var vertices []Vertex
+		if numVertices > 0 {
+			vertices = make([]Vertex, numVertices)
+			for i := 0; i < int(numVertices); i++ {
+				if err := readElement(r, &vertices[i]); err != nil {
+					return err
+				}
+			}
+		}
+
+		*e = vertices
+
+	case *Vertex:
+		if _, err := io.ReadFull(r, e[:]); err != nil {
+			return err
+		}
+
 	case *OpaqueReason:
 		var l [2]byte
 		if _, err := io.ReadFull(r, l[:]); err != nil {

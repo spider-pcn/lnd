@@ -1081,6 +1081,7 @@ out:
 			discStream.AddMsg(msg, p.quit)
 
 		case *lnwire.ProbeRouteChannelBalances:
+			peerLog.Infof("received probe from peer=%v", p.pubKeyBytes)
 			p.server.respondToProbe(msg)
 
 		default:
@@ -1242,10 +1243,10 @@ func messageSummary(msg lnwire.Message) string {
 
 	case *lnwire.ProbeRouteChannelBalances:
 		return fmt.Sprintf("probe_route=%v, current_hop_num=%v, "+
-			"sender=%v, is_reversed=%t, current_node=%v,"+
+			"sender=%v, is_reversed=%d, current_node=%v,"+
 			"balance_map=%v", msg.Route, msg.HopNum, msg.Sender,
 			msg.ProbeCompleted, msg.CurrentNode,
-			msg.RouterChannelBalMap)
+			msg.RouterChannelBalances)
 
 	}
 
@@ -1321,6 +1322,11 @@ func (p *peer) writeMessage(msg lnwire.Message) error {
 		return ErrPeerExiting
 	}
 
+	switch msg.(type) {
+	case *lnwire.ProbeRouteChannelBalances:
+		peerLog.Infof("actually writing Probe message\n")
+	}
+
 	p.logWireMessage(msg, false)
 
 	// We'll re-slice of static write buffer to allow this new message to
@@ -1333,6 +1339,11 @@ func (p *peer) writeMessage(msg lnwire.Message) error {
 	// capacity), we'll now encode the message directly into this buffer.
 	n, err := lnwire.WriteMessage(b, msg, 0)
 	atomic.AddUint64(&p.bytesSent, uint64(n))
+
+	if err != nil {
+		peerLog.Errorf("problem %v experienced when writing msg %v", err, msg)
+		return err
+	}
 
 	p.conn.SetWriteDeadline(time.Now().Add(writeMessageTimeout))
 
@@ -1364,6 +1375,9 @@ out:
 				// possibly account for processing within func?
 				now := time.Now().UnixNano()
 				atomic.StoreInt64(&p.pingLastSend, now)
+
+			case *lnwire.ProbeRouteChannelBalances:
+				fmt.Printf("attempting to write message=%v\n", outMsg)
 			}
 
 			// Write out the message to the socket, responding with
