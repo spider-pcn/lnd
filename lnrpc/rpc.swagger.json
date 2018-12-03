@@ -2637,7 +2637,8 @@
         },
         "spiderAlgo": {
           "type": "integer",
-          "format": "int32"
+          "format": "int32",
+          "description": "*\nThe Spider routing algorithm to use. Relationship between values and algorithms\nis defined in the beginning of routing/router.go. Zero means not using Spider."
         }
       }
     },

@@ -458,10 +458,10 @@ func edgeWeight(lockedAmt lnwire.MilliSatoshi, fee lnwire.MilliSatoshi,
 	return int64(fee) + timeLockPenalty
 }
 
-
 // This function is similar to findPath. However, it does not consider whether
-// the payment can be sent or not, i.e. it ignores previous failures and channel
-// capacity limits.
+// the payment can be sent or not, i.e. it ignores failures reported by previous
+// payment session, channel capacity, and fee limits. It does consider minHTLC
+// policy set by nodes.
 func findSpiderShortestPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
 	additionalEdges map[Vertex][]*channeldb.ChannelEdgePolicy,
 	sourceNode *channeldb.LightningNode, target *btcec.PublicKey,
@@ -678,7 +678,6 @@ func findSpiderShortestPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
 				return nil
 			}
 
-			
 			edgeBandwidth := lnwire.NewMSatFromSatoshis(edgeInfo.Capacity)
 
 			// Before we can process the edge, we'll need to fetch

@@ -39,6 +39,9 @@ const (
 )
 
 const (
+	// Here each constant corrsponds to a Spider routing algorithm. Those
+	// consts are used across files to represent a specific algorithm to
+	// use when sending payments.
 	off          = iota
 	ShortestPath = iota
 )
@@ -1731,7 +1734,6 @@ func (r *ChannelRouter) SendToRoute(routes []*Route,
 	// TODO: add state to update when the probe is received back
 	// wait for some time before sending out the payment
 	// seems like a good first start
-
 	paySession := r.missionControl.NewPaymentSessionFromRoutes(
 		routes,
 	)
@@ -2105,6 +2107,48 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 				pruneVertexFailure(
 					paySession, route, errSource, false,
 				)
+				continue
+
+				// If the send fail due to a node not having the
+				// required features, then we'll note this error and
+				// continue.
+			case *lnwire.FailRequiredChannelFeatureMissing:
+				pruneVertexFailure(
+					paySession, route, errSource, false,
+				)
+				continue
+
+				// If the next hop in the route wasn't known or
+				// offline, we'll only the channel which we attempted
+				// to route over. This is conservative, and it can
+				// handle faulty channels between nodes properly.
+				// Additionally, this guards against routing nodes
+				// returning errors in order to attempt to black list
+				// another node.
+			case *lnwire.FailUnknownNextPeer:
+				pruneEdgeFailure(paySession, route, errSource)
+				continue
+
+				// If the node wasn't able to forward for which ever
+				// reason, then we'll note this and continue with the
+				// routes.
+			case *lnwire.FailTemporaryNodeFailure:
+				pruneVertexFailure(
+					paySession, route, errSource, false,
+				)
+				continue
+
+			case *lnwire.FailPermanentNodeFailure:
+				pruneVertexFailure(
+					paySession, route, errSource, false,
+				)
+				continue
+
+				// If we get a permanent channel or node failure, then
+				// we'll note this (exclude the vertex/edge), and
+				// continue with the rest of the routes.
+			case *lnwire.FailPermanentChannelFailure:
+				pruneEdgeFailure(paySession, route, errSource)
 				continue
 
 				// If the send fail due to a node not having the
