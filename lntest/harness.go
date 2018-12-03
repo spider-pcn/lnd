@@ -239,13 +239,15 @@ func (n *NetworkHarness) TearDownAll() error {
 // NewNode fully initializes a returns a new HarnessNode bound to the
 // current instance of the network harness. The created node is running, but
 // not yet connected to other nodes within the network.
+// Here delay is an optional param specifying the delay of packets going to
+// this node. If this param is left empty, no delay will be applied.
 func (n *NetworkHarness) NewNode(name string, extraArgs []string, delay ...int) (*HarnessNode, error) {
 	if len(delay) == 0 {
 		return n.newNode(name, extraArgs, false, 0)
 	} else {
 		return n.newNode(name, extraArgs, false, delay[0])
 	}
-	
+
 }
 
 // NewNodeWithSeed fully initializes a new HarnessNode after creating a fresh
@@ -341,7 +343,7 @@ func (n *NetworkHarness) newNode(name string, extraArgs []string,
 		RPCConfig: &n.rpcConfig,
 		NetParams: n.netParams,
 		ExtraArgs: extraArgs,
-		Delay:	   delay,
+		Delay:     delay,
 	})
 	if err != nil {
 		return nil, err
