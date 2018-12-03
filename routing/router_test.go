@@ -926,6 +926,7 @@ func TestSendSpiderShortestPathSucceed(t *testing.T) {
 	t.Parallel()
 
 	const startingBlockHeight = 101
+	// load test topology from outing/testdata/basic_graph.json
 	ctx, cleanUp, err := createTestCtxFromFile(startingBlockHeight, basicGraphFilePath)
 	defer cleanUp()
 	if err != nil {
@@ -933,7 +934,7 @@ func TestSendSpiderShortestPathSucceed(t *testing.T) {
 	}
 
 	// Craft a LightningPayment struct that'll send a payment from roasbeef
-	// to luo ji for 1000 satoshis, with a maximum of 1000 satoshis in fees.
+	// to luo ji for 1000 satoshis.
 	var payHash [32]byte
 	paymentAmt := lnwire.NewMSatFromSatoshis(1000)
 	payment := LightningPayment{
@@ -987,6 +988,7 @@ func TestSendSpiderShortestPathFail(t *testing.T) {
 	t.Parallel()
 
 	const startingBlockHeight = 101
+	// load test topology from outing/testdata/basic_graph.json
 	ctx, cleanUp, err := createTestCtxFromFile(startingBlockHeight, basicGraphFilePath)
 	defer cleanUp()
 	if err != nil {
@@ -994,7 +996,7 @@ func TestSendSpiderShortestPathFail(t *testing.T) {
 	}
 
 	// Craft a LightningPayment struct that'll send a payment from roasbeef
-	// to luo ji for 1000 satoshis, with a maximum of 1000 satoshis in fees.
+	// to luo ji for 1000 satoshis.
 	var payHash [32]byte
 	paymentAmt := lnwire.NewMSatFromSatoshis(1000)
 	payment := LightningPayment{
