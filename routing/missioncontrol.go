@@ -331,13 +331,13 @@ func (p *paymentSession) ReportChannelFailure(e uint64) {
 	p.mc.Unlock()
 }
 
+// RequestShortestPath locates the shortest route for the payment. It calls
+// findSpiderShortestPath to do the actual path-finding stuff. Please refer
+// to pathfind.go -> findSpiderShortestPath
 func (p *paymentSession) RequestShortestPath(payment *LightningPayment,
 	height uint32, finalCltvDelta uint16) (*Route, error) {
 
-	// Taking into account this prune view, we'll attempt to locate a path
-	// to our destination, respecting the recommendations from
-	// missionControl.
-	path, err := findSpiderShortestPath(nil, p.mc.graph, p.additionalEdges, 
+	path, err := findSpiderShortestPath(nil, p.mc.graph, p.additionalEdges,
 		p.mc.selfNode, payment.Target, payment.Amount)
 	if err != nil {
 		return nil, err
