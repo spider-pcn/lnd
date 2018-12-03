@@ -1755,6 +1755,10 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 	var route *Route
 	switch spiderAlgo {
 	case ShortestPath:
+		// shortest-path routing algorithm. Find the shortest path using
+		// RequestShortestPath and then try that path. If that path fails,
+		// no further attempts will be made and the function will return err.
+
 		// create a dummy paymentSession to find shortest path
 		dummyPaySession, err := r.missionControl.NewPaymentSession(
 			payment.RouteHints, payment.Target,
