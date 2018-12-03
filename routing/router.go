@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"math"
+	"reflect"
 	"runtime"
 	"sort"
 	"sync"
@@ -325,6 +327,63 @@ func New(cfg Config) (*ChannelRouter, error) {
 	)
 
 	return r, nil
+}
+
+// UpdateDestRouteBalances is called when a probe is completed to update the table with per
+// destination information. The information added corresponds to the minimum balance on the
+// path that was just queried and updates the time at which this probe was completed.
+func (r *ChannelRouter) UpdateDestRouteBalances(msg *lnwire.ProbeRouteChannelBalances) {
+	dest := Vertex(msg.Route[0])
+	fmt.Printf("destination is %v\n", dest)
+
+	// reverse the route because probe comes back reversed
+	reversedRoute := make([]Vertex, len(msg.Route))
+	for i := len(reversedRoute)/2 - 1; i >= 0; i-- {
+		opp := len(reversedRoute) - 1 - i
+		reversedRoute[i], reversedRoute[opp] = Vertex(msg.Route[opp]), Vertex(msg.Route[i])
+	}
+
+	// compute minimum balance on route
+	var minBal lnwire.MilliSatoshi
+	minBal = math.MaxUint64
+	for _, bal := range msg.RouterChannelBalances {
+		if bal <= minBal {
+			minBal = bal
+		}
+	}
+
+	// create new tuple with timestamp of now
+	routeInfoEntry := RouteInfo{
+		route:       reversedRoute,
+		minBalance:  minBal,
+		lastUpdated: time.Now(),
+	}
+
+	// insert into map
+	var routes []RouteInfo
+	if routes, ok := r.missionControl.destRouteBalances[dest]; ok {
+		if index := findRouteInRouteSlice(routes, reversedRoute); index != -1 {
+			routes[index] = routeInfoEntry
+		} else {
+			routes = append(routes, routeInfoEntry)
+		}
+	} else {
+		routes = append(routes, routeInfoEntry)
+	}
+	r.missionControl.destRouteBalances[dest] = routes
+
+	// send out a new probe if you have some outstanding payment or have a separate goroutine do that
+}
+
+// findRouteInRouteSlice is a helper function that finds the struct associated with a particular route
+// in a slice of routeInfo structs associated with a given destination
+func findRouteInRouteSlice(routes []RouteInfo, route []Vertex) int {
+	for i := range routes {
+		if reflect.DeepEqual(routes[i].route, route) {
+			return i
+		}
+	}
+	return -1
 }
 
 // Start launches all the goroutines the ChannelRouter requires to carry out

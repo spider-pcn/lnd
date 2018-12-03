@@ -1016,6 +1016,7 @@ func (s *server) respondToProbe(msg *lnwire.ProbeRouteChannelBalances) {
 		} else {
 			//TODO:  probe finished propagating
 			// update the table with minimum balance for the path
+			s.chanRouter.UpdateDestRouteBalances(msg)
 			srvrLog.Infof("finished probe")
 
 		}

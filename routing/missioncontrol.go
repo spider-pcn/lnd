@@ -67,6 +67,18 @@ type missionControl struct {
 	// add to another generation
 
 	// TODO(roasbeef): also add favorable metrics for nodes
+
+	// destRouteBalances maps every destination that this router sends payments to
+	// to a set of routes to that destination and the minimum balance on the routes
+	// Every destination maps to a set of tuples - each tuple has a route, the minimum
+	// balance on that route and the timestamp of when that route was updated
+	destRouteBalances map[Vertex][]RouteInfo
+}
+
+type RouteInfo struct {
+	route       []Vertex
+	minBalance  lnwire.MilliSatoshi
+	lastUpdated time.Time
 }
 
 // newMissionControl returns a new instance of missionControl.
