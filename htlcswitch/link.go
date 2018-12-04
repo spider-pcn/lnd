@@ -364,7 +364,7 @@ func (l *channelLink) startQueueWatcher() {
 			debug_print(fmt.Sprintf("current queue len at this node is: %d\n", l.overflowQueue.queueLen))
 			l.overflowQueue.SignalFreeSlot()
 		}
-		time.Sleep(50*time.Millisecond)
+		time.Sleep(5*time.Millisecond)
 	}
 }
 

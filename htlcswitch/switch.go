@@ -396,7 +396,7 @@ func (s *Switch) updateFirebase() {
 		if err := f.Set(vals); err != nil {
 			fmt.Println("error when logging to firebase")
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 // SendHTLC is used by other subsystems which aren't belong to htlc switch
@@ -1793,7 +1793,7 @@ func (s *Switch) Start() error {
 		log.Errorf("unable to reforward responses: %v", err)
 		return err
 	}
-	if SPIDER_FLAG {
+	if SPIDER_FLAG && LOG_FIREBASE {
 		go s.updateFirebase()
 	}
 

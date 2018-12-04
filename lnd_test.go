@@ -4036,12 +4036,12 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
                             if s != 0 {
                                 mux.Lock()
 								fmt.Printf("%v->%v: failed\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
-                                mux.Unlock()
+																mux.Unlock()
                             }
 						case <-timeout:
                             mux.Lock()
 							fmt.Printf("%v->%v: timeout\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
-                            mux.Unlock()
+														mux.Unlock()
 						}
 					}(i)
 				}
@@ -12760,7 +12760,10 @@ func TestLightningNetworkDaemon(t *testing.T) {
 	}
 
 	t.Logf("Running %v integration tests", len(testsCases))
-	for _, testCase := range testsCases {
+	for i, testCase := range testsCases {
+		if i != 0  {
+			continue;
+		}
 		logLine := fmt.Sprintf("STARTING ============ %v ============\n",
 			testCase.name)
 
