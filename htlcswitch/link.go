@@ -358,13 +358,14 @@ func (l *channelLink) startQueueWatcher() {
 		// popping the HTLC off the queue, all those relevant checks will be
 		// performed again, and if anything fails, the HTLC will be added back to
 		// the queue.
-		if (channelAmt > minOverflowAmt && minOverflowAmt != 0) {
+		if (channelAmt >= minOverflowAmt && minOverflowAmt != 0) {
+            debug_print(fmt.Sprintf("in startQueueWatcher, chanID: %s, channelAmt: %d, minOverflowAmt: %d\n", l.channel.ShortChanID(), channelAmt, minOverflowAmt));
 			// if no items in the queue, will not have any effect.
 			debug_print(fmt.Sprintf("signaling to the overflow queue, for channel\n: %s\n", l.shortChanID))
 			debug_print(fmt.Sprintf("current queue len at this node is: %d\n", l.overflowQueue.queueLen))
 			l.overflowQueue.SignalFreeSlot()
 		}
-		time.Sleep(5*time.Millisecond)
+		time.Sleep(50*time.Millisecond)
 	}
 }
 
