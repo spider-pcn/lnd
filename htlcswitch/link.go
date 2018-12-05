@@ -383,7 +383,9 @@ func (l *channelLink) Start() error {
 		log.Warn(err)
 		return err
 	}
-	go l.startQueueWatcher()
+    if (SPIDER_FLAG) {
+        go l.startQueueWatcher()
+    }
 	log.Infof("ChannelLink(%v) is starting", l)
 
 	l.mailBox.ResetMessages()
@@ -1138,6 +1140,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 					l.overflowQueue.AddPkt(pkt)
 					return
 				}
+                fallthrough
 
 			// The HTLC was unable to be added to the state
 			// machine, as a result, we'll signal the switch to
