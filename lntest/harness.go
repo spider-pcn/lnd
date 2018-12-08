@@ -239,15 +239,16 @@ func (n *NetworkHarness) TearDownAll() error {
 // NewNode fully initializes a returns a new HarnessNode bound to the
 // current instance of the network harness. The created node is running, but
 // not yet connected to other nodes within the network.
+func (n *NetworkHarness) NewNode(name string, extraArgs []string) (*HarnessNode, error) {
+	return n.newNode(name, extraArgs, false, 0)
+}
+
+// NewNodeWithDelay is identical to NewNode, except that a delay can be added
+// to network packets.
 // Here delay is an optional param specifying the delay of packets going to
 // this node. If this param is left empty, no delay will be applied.
-func (n *NetworkHarness) NewNode(name string, extraArgs []string, delay ...int) (*HarnessNode, error) {
-	if len(delay) == 0 {
-		return n.newNode(name, extraArgs, false, 0)
-	} else {
-		return n.newNode(name, extraArgs, false, delay[0])
-	}
-
+func (n *NetworkHarness) NewNodeWithDelay(name string, extraArgs []string, delay int) (*HarnessNode, error) {
+	return n.newNode(name, extraArgs, false, delay)
 }
 
 // NewNodeWithSeed fully initializes a new HarnessNode after creating a fresh

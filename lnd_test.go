@@ -3691,7 +3691,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	// Construct the nodes
 	for i := 0; i < numNodes; i++ {
-		nd, err := net.NewNode(nodeNames[i], nil, nodeDelays[i])
+		nd, err := net.NewNodeWithDelay(nodeNames[i], nil, nodeDelays[i])
 		nodes[i] = nd
 		if err != nil {
 			t.Fatalf("unable to create new node: %v", err)
