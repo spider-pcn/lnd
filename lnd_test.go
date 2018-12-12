@@ -3645,6 +3645,10 @@ func testMultiHopPayments(net *lntest.NetworkHarness, t *harnessTest) {
 	closeChannelAndAssert(ctxt, t, net, carol, chanPointCarol, false)
 }
 
+// testSpiderShortestPath benchmarks the performance of the shortest-path routing
+// algorithm of Spider. It sets up nodes and payment demands according to the
+// HotNets paper, and starts sending payments on each node. It counts how
+// many payments have succeeded and report the success ratio.
 func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	ctxb := context.Background()
 
@@ -3822,7 +3826,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		MinHtlc:          0, // We set it to zero during channel creation.
 	}
 
-	// Each node will subscribe to graph change event.
+	// Each node will subscribe to graph change event. For each node we subscribe it to
+	// the graph update notifications and register this subscription "handler" in graphSubs.
 	graphSubs := make([]graphSubscription, numNodes)
 	for i := 0; i < numNodes; i++ {
 		ctxt, _ := context.WithTimeout(ctxb, timeout)
@@ -3831,6 +3836,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	}
 
 	// For each channel, both ends will see an chanUpdate message. So we end up with numChannels * 2.
+	// We will make sure that each node receives that number of update messages, and each message
+	// has the content specified below.
 	expectedMessages := make([]expectedChanUpdate, numChannels*2)
 	for i := 0; i < numChannels; i++ {
 		expectedMessages[i*2] = expectedChanUpdate{
@@ -3839,8 +3846,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			nodes[connections[i][1]].PubKeyStr, expectedPolicy, chanPoints[i]}
 	}
 
-	// Actually update the channel policy here. We need to do this for every node, since each
-	// node manages its own forwarding policy (fees, etc.)
+	// Actually update the channel policy here. We need to do this for every node instead for
+	// each channel, since each node manages its own forwarding policy (fees, etc.)
 	for i := 0; i < numChannels; i++ {
 		ctxt, _ = context.WithTimeout(ctxb, timeout)
 		updateFeeReq := &lnrpc.PolicyUpdateRequest{
@@ -3859,7 +3866,12 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		}
 	}
 
-	// Wait for everyone to receive the channel update.
+	// Wait for everyone to receive all the expected channel update messages. This can sometimes
+	// fail in the test. If it fails, running the test again fixes the problem. TODO: It is possibly
+	// due to a race condition - before the graph update subscription has completed, we have already
+	// updated the channel, so some nodes do not hear those updates. Checking whether the subscription
+	// has been established before updating channel policy should fix the problem, but I can't seem
+	// to find the relevant APIs (although I believe there are).
 	for i := 0; i < numNodes; i++ {
 		waitForChannelUpdate(t, graphSubs[i], expectedMessages)
 	}
@@ -3868,6 +3880,9 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	prand.Seed(time.Now().UnixNano())
 
 	// Initialize waitgroups. We will wait for every payment goroutine to finish before exiting
+	// Specifically, 'wg' waits for paymentDispatcher goroutines, making sure that no payments
+	// are being generated when we try to finish this test. tranwg handles paymentTimeoutWrapper
+	// goroutines, making sure that no outstanding payments are there when we try to finish.
 	var wg sync.WaitGroup
 	var tranwg sync.WaitGroup
 	wg.Add(numPayIntents)
@@ -3973,7 +3988,11 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	// Dispatcher goroutines
 	for i := 0; i < numPayIntents; i++ {
-		go func(i int) {
+		// paymentDispatcher controls when to send a new payment of a certain demand,
+		// by constantly checking the paymentTick channel. Once the channel is non-empty,
+		// it fires a paymentTimeoutWrapper goroutine to actually send a payment. Or, if
+		// the paymentStop channel is non-empty, it returns (times out).
+		paymentDispatcher := func(i int) {
 			defer wg.Done()
 			for {
 				// We either timeout, or wait for the next tick.
@@ -3981,8 +4000,9 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 				case <-paymentStop[i]:
 					return
 				case <-paymentTick[i]:
-					// We create a goroutine for every single payment, and track the status of the payment here
-					go func(i int) {
+					// paymentTimeoutWrapper is a simple wrapper over paymentCreator, which
+					// adds local timeout to the payment.
+					paymentTimeoutWrapper := func(i int) {
 						// The payment will timeout after 20 seconds.
 						timeout := time.After(time.Duration(20) * time.Second)
 						// One more goroutine to wait for
@@ -3993,7 +4013,11 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 						// in the current goroutine we simply wait for either timeout or the sub-goroutine to
 						// finish. Whichever comes first, we will return.
 						sendok := make(chan int, 1)
-						go func(i int) {
+						// paymentCreator is the actual function that handles a single payment.
+						// It creates the invoice and fires a payment, and checks for the results.
+						// This function blocks when waiting for the result, so we use
+						// paymentTimeoutWrapper to ensure that it does not get stuck forever.
+						paymentCreator := func(i int) {
 							// Generate invoice and add that invoice to target node.
 							preimage := make([]byte, 32)
 							_, err := rand.Read(preimage)
@@ -4032,7 +4056,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 							} else if payresp.PaymentError != "" {
 								sendok <- 2 // payment failure
 							}
-						}(i)
+						}
+						go paymentCreator(i)
 						select {
 						case s := <-sendok:
 							if s != 0 {
@@ -4045,10 +4070,12 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 							fmt.Printf("%v->%v: timeout\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
 							mux.Unlock()
 						}
-					}(i)
+					}
+					go paymentTimeoutWrapper(i)
 				}
 			}
-		}(i)
+		}
+		go paymentDispatcher(i)
 	}
 
 	// Control goroutine
