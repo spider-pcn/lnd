@@ -33,14 +33,14 @@ import (
 )
 
 const (
-	defaultBitcoinMinHTLCMSat   = lnwire.MilliSatoshi(1000)
-	defaultBitcoinBaseFeeMSat   = lnwire.MilliSatoshi(1000)
-	defaultBitcoinFeeRate       = lnwire.MilliSatoshi(1)
+	defaultBitcoinMinHTLCMSat   = lnwire.MilliSatoshi(0)
+	defaultBitcoinBaseFeeMSat   = lnwire.MilliSatoshi(0)
+	defaultBitcoinFeeRate       = lnwire.MilliSatoshi(0)
 	defaultBitcoinTimeLockDelta = 144
 
-	defaultLitecoinMinHTLCMSat   = lnwire.MilliSatoshi(1000)
-	defaultLitecoinBaseFeeMSat   = lnwire.MilliSatoshi(1000)
-	defaultLitecoinFeeRate       = lnwire.MilliSatoshi(1)
+	defaultLitecoinMinHTLCMSat   = lnwire.MilliSatoshi(0)
+	defaultLitecoinBaseFeeMSat   = lnwire.MilliSatoshi(0)
+	defaultLitecoinFeeRate       = lnwire.MilliSatoshi(0)
 	defaultLitecoinTimeLockDelta = 576
 	defaultLitecoinDustLimit     = btcutil.Amount(54600)
 

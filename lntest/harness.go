@@ -240,7 +240,15 @@ func (n *NetworkHarness) TearDownAll() error {
 // current instance of the network harness. The created node is running, but
 // not yet connected to other nodes within the network.
 func (n *NetworkHarness) NewNode(name string, extraArgs []string) (*HarnessNode, error) {
-	return n.newNode(name, extraArgs, false)
+	return n.newNode(name, extraArgs, false, 0)
+}
+
+// NewNodeWithDelay is identical to NewNode, except that a delay can be added
+// to network packets.
+// Here delay is an optional param specifying the delay of packets going to
+// this node. If this param is left empty, no delay will be applied.
+func (n *NetworkHarness) NewNodeWithDelay(name string, extraArgs []string, delay int) (*HarnessNode, error) {
+	return n.newNode(name, extraArgs, false, delay)
 }
 
 // NewNodeWithSeed fully initializes a new HarnessNode after creating a fresh
@@ -250,7 +258,7 @@ func (n *NetworkHarness) NewNode(name string, extraArgs []string) (*HarnessNode,
 func (n *NetworkHarness) NewNodeWithSeed(name string, extraArgs []string,
 	password []byte) (*HarnessNode, []string, error) {
 
-	node, err := n.newNode(name, extraArgs, true)
+	node, err := n.newNode(name, extraArgs, true, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -300,7 +308,7 @@ func (n *NetworkHarness) RestoreNodeWithSeed(name string, extraArgs []string,
 	password []byte, mnemonic []string,
 	recoveryWindow int32) (*HarnessNode, error) {
 
-	node, err := n.newNode(name, extraArgs, true)
+	node, err := n.newNode(name, extraArgs, true, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -329,13 +337,14 @@ func (n *NetworkHarness) RestoreNodeWithSeed(name string, extraArgs []string,
 // can be used immediately. Otherwise, the node will require an additional
 // initialization phase where the wallet is either created or restored.
 func (n *NetworkHarness) newNode(name string, extraArgs []string,
-	hasSeed bool) (*HarnessNode, error) {
+	hasSeed bool, delay int) (*HarnessNode, error) {
 	node, err := newNode(nodeConfig{
 		Name:      name,
 		HasSeed:   hasSeed,
 		RPCConfig: &n.rpcConfig,
 		NetParams: n.netParams,
 		ExtraArgs: extraArgs,
+		Delay:     delay,
 	})
 	if err != nil {
 		return nil, err

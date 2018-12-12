@@ -36,6 +36,14 @@ const (
 	defaultPayAttemptTimeout = time.Duration(time.Second * 60)
 )
 
+const (
+	// Here each constant corrsponds to a Spider routing algorithm. Those
+	// consts are used across files to represent a specific algorithm to
+	// use when sending payments.
+	off          = iota
+	ShortestPath = iota
+)
+
 var (
 	// ErrNoRouteHopsProvided is returned when a caller attempts to
 	// construct a new sphinx packet, but provides an empty set of hops for
@@ -463,8 +471,8 @@ func (r *ChannelRouter) syncGraphWithChain() error {
 	case pruneHeight == 0 || pruneHash == nil:
 		return nil
 
-	// If the block hashes and heights match exactly, then we don't need to
-	// prune the channel graph as we're already fully in sync.
+		// If the block hashes and heights match exactly, then we don't need to
+		// prune the channel graph as we're already fully in sync.
 	case bestHash.IsEqual(pruneHash) && uint32(bestHeight) == pruneHeight:
 		return nil
 	}
@@ -760,8 +768,8 @@ func (r *ChannelRouter) networkHandler() {
 
 			// TODO(halseth): notify client about the reorg?
 
-		// A new block has arrived, so we can prune the channel graph
-		// of any channels which were closed in the block.
+			// A new block has arrived, so we can prune the channel graph
+			// of any channels which were closed in the block.
 		case chainUpdate, ok := <-r.newBlocks:
 			// If the channel has been closed, then this indicates
 			// the daemon is shutting down, so we exit ourselves.
@@ -838,9 +846,9 @@ func (r *ChannelRouter) networkHandler() {
 				ClosedChannels: closeSummaries,
 			})
 
-		// A new notification client update has arrived. We're either
-		// gaining a new client, or cancelling notifications for an
-		// existing client.
+			// A new notification client update has arrived. We're either
+			// gaining a new client, or cancelling notifications for an
+			// existing client.
 		case ntfnUpdate := <-r.ntfnClientUpdates:
 			clientID := ntfnUpdate.clientID
 
@@ -869,16 +877,16 @@ func (r *ChannelRouter) networkHandler() {
 			}
 			r.Unlock()
 
-		// The graph prune ticker has ticked, so we'll examine the
-		// state of the known graph to filter out any zombie channels
-		// for pruning.
+			// The graph prune ticker has ticked, so we'll examine the
+			// state of the known graph to filter out any zombie channels
+			// for pruning.
 		case <-graphPruneTicker.C:
 			if err := r.pruneZombieChans(); err != nil {
 				log.Errorf("unable to prune zombies: %v", err)
 			}
 
-		// The router has been signalled to exit, to we exit our main
-		// loop so the wait group can be decremented.
+			// The router has been signalled to exit, to we exit our main
+			// loop so the wait group can be decremented.
 		case <-r.quit:
 			return
 		}
@@ -1110,8 +1118,8 @@ func (r *ChannelRouter) processUpdate(msg interface{}) error {
 
 			}
 
-		// Similarly, a flag set of 1 indicates this is an announcement
-		// for the "second" node in the channel.
+			// Similarly, a flag set of 1 indicates this is an announcement
+			// for the "second" node in the channel.
 		case msg.Flags&lnwire.ChanUpdateDirection == 1:
 
 			// Ignore outdated message.
@@ -1606,6 +1614,62 @@ func (r *ChannelRouter) SendToRoute(routes []*Route,
 	return r.sendPayment(payment, paySession)
 }
 
+// SendSpider attempts to send a payment as described within the
+// passed LightningPayment through the path suggested by SPIDER. Routing
+// algorithm is selected in the input to the function, and choices are
+// defined in the beginning of the file. This function is blocking and
+// will return either: when the payment is successful, or all routes
+// have been attempted and resulted in a failed payment. If the payment
+// succeeds, then a non-nil Route will be returned which describes the
+// path the successful payment traversed within the network to reach the
+// destination. Additionally, the payment preimage will also be returned.
+func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([32]byte, *Route, error) {
+
+	var route *Route
+	switch spiderAlgo {
+	case ShortestPath:
+		// shortest-path routing algorithm. Find the shortest path using
+		// RequestShortestPath and then try that path. If that path fails,
+		// no further attempts will be made and the function will return err.
+
+		// create a dummy paymentSession to find shortest path
+		dummyPaySession, err := r.missionControl.NewPaymentSession(
+			payment.RouteHints, payment.Target,
+		)
+		if err != nil {
+			return [32]byte{}, nil, err
+		}
+
+		// calculate CLTV delta
+		var finalCLTVDelta uint16
+		if payment.FinalCLTVDelta == nil {
+			finalCLTVDelta = DefaultFinalCLTVDelta
+		} else {
+			finalCLTVDelta = *payment.FinalCLTVDelta
+		}
+
+		// fetch the current block height
+		_, currentHeight, err := r.cfg.Chain.GetBestBlock()
+		if err != nil {
+			return [32]byte{}, nil, err
+		}
+
+		// get optimal route
+		route, err = dummyPaySession.RequestShortestPath(
+			payment, uint32(currentHeight), finalCLTVDelta,
+		)
+		if err != nil {
+			// If we're unable to find a route, return error
+			return [32]byte{}, nil, fmt.Errorf("unable to "+
+				"route payment to destination: %v",
+				err)
+		}
+	}
+
+	// call SendToRoute to actually send the payment
+	return r.SendToRoute([]*Route{route}, payment)
+}
+
 // sendPayment attempts to send a payment as described within the passed
 // LightningPayment. This function is blocking and will return either: when the
 // payment is successful, or all candidates routes have been attempted and
@@ -1766,39 +1830,39 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			case *lnwire.FailUnknownPaymentHash:
 				return preImage, nil, sendError
 
-			// If we sent the wrong amount to the destination, then
-			// we'll exit early.
+				// If we sent the wrong amount to the destination, then
+				// we'll exit early.
 			case *lnwire.FailIncorrectPaymentAmount:
 				return preImage, nil, sendError
 
-			// If the time-lock that was extended to the final node
-			// was incorrect, then we can't proceed.
+				// If the time-lock that was extended to the final node
+				// was incorrect, then we can't proceed.
 			case *lnwire.FailFinalIncorrectCltvExpiry:
 				return preImage, nil, sendError
 
-			// If we crafted an invalid onion payload for the final
-			// node, then we'll exit early.
+				// If we crafted an invalid onion payload for the final
+				// node, then we'll exit early.
 			case *lnwire.FailFinalIncorrectHtlcAmount:
 				return preImage, nil, sendError
 
-			// Similarly, if the HTLC expiry that we extended to
-			// the final hop expires too soon, then will fail the
-			// payment.
-			//
-			// TODO(roasbeef): can happen to to race condition, try
-			// again with recent block height
+				// Similarly, if the HTLC expiry that we extended to
+				// the final hop expires too soon, then will fail the
+				// payment.
+				//
+				// TODO(roasbeef): can happen to to race condition, try
+				// again with recent block height
 			case *lnwire.FailFinalExpiryTooSoon:
 				return preImage, nil, sendError
 
-			// If we erroneously attempted to cross a chain border,
-			// then we'll cancel the payment.
+				// If we erroneously attempted to cross a chain border,
+				// then we'll cancel the payment.
 			case *lnwire.FailInvalidRealm:
 				return preImage, nil, sendError
 
-			// If we get a notice that the expiry was too soon for
-			// an intermediate node, then we'll prune out the node
-			// that sent us this error, as it doesn't now what the
-			// correct block height is.
+				// If we get a notice that the expiry was too soon for
+				// an intermediate node, then we'll prune out the node
+				// that sent us this error, as it doesn't now what the
+				// correct block height is.
 			case *lnwire.FailExpiryTooSoon:
 				update := onionErr.Update
 				err := r.applyChannelUpdate(&update, errSource)
@@ -1812,9 +1876,9 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 				)
 				continue
 
-			// If we hit an instance of onion payload corruption or
-			// an invalid version, then we'll exit early as this
-			// shouldn't happen in the typical case.
+				// If we hit an instance of onion payload corruption or
+				// an invalid version, then we'll exit early as this
+				// shouldn't happen in the typical case.
 			case *lnwire.FailInvalidOnionVersion:
 				return preImage, nil, sendError
 			case *lnwire.FailInvalidOnionHmac:
@@ -1822,9 +1886,9 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			case *lnwire.FailInvalidOnionKey:
 				return preImage, nil, sendError
 
-			// If the onion error includes a channel update, and
-			// isn't necessarily fatal, then we'll apply the update
-			// and continue with the rest of the routes.
+				// If the onion error includes a channel update, and
+				// isn't necessarily fatal, then we'll apply the update
+				// and continue with the rest of the routes.
 			case *lnwire.FailAmountBelowMinimum:
 				update := onionErr.Update
 				err := r.applyChannelUpdate(&update, errSource)
@@ -1835,9 +1899,9 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 
 				return preImage, nil, sendError
 
-			// If we get a failure due to a fee, so we'll apply the
-			// new fee update, and retry our attempt using the
-			// newly updated fees.
+				// If we get a failure due to a fee, so we'll apply the
+				// new fee update, and retry our attempt using the
+				// newly updated fees.
 			case *lnwire.FailFeeInsufficient:
 				update := onionErr.Update
 				err := r.applyChannelUpdate(&update, errSource)
@@ -1868,10 +1932,10 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 				errFailedFeeChans[chanID] = struct{}{}
 				continue
 
-			// If we get the failure for an intermediate node that
-			// disagrees with our time lock values, then we'll
-			// prune it out for now, and continue with path
-			// finding.
+				// If we get the failure for an intermediate node that
+				// disagrees with our time lock values, then we'll
+				// prune it out for now, and continue with path
+				// finding.
 			case *lnwire.FailIncorrectCltvExpiry:
 				update := onionErr.Update
 				err := r.applyChannelUpdate(&update, errSource)
@@ -1885,9 +1949,9 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 				)
 				continue
 
-			// The outgoing channel that this node was meant to
-			// forward one is currently disabled, so we'll apply
-			// the update and continue.
+				// The outgoing channel that this node was meant to
+				// forward one is currently disabled, so we'll apply
+				// the update and continue.
 			case *lnwire.FailChannelDisabled:
 				update := onionErr.Update
 				err := r.applyChannelUpdate(&update, errSource)
@@ -1899,9 +1963,9 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 				pruneEdgeFailure(paySession, route, errSource)
 				continue
 
-			// It's likely that the outgoing channel didn't have
-			// sufficient capacity, so we'll prune this edge for
-			// now, and continue onwards with our path finding.
+				// It's likely that the outgoing channel didn't have
+				// sufficient capacity, so we'll prune this edge for
+				// now, and continue onwards with our path finding.
 			case *lnwire.FailTemporaryChannelFailure:
 				update := onionErr.Update
 				err := r.applyChannelUpdate(update, errSource)
@@ -1913,38 +1977,38 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 				pruneEdgeFailure(paySession, route, errSource)
 				continue
 
-			// If the send fail due to a node not having the
-			// required features, then we'll note this error and
-			// continue.
+				// If the send fail due to a node not having the
+				// required features, then we'll note this error and
+				// continue.
 			case *lnwire.FailRequiredNodeFeatureMissing:
 				pruneVertexFailure(
 					paySession, route, errSource, false,
 				)
 				continue
 
-			// If the send fail due to a node not having the
-			// required features, then we'll note this error and
-			// continue.
+				// If the send fail due to a node not having the
+				// required features, then we'll note this error and
+				// continue.
 			case *lnwire.FailRequiredChannelFeatureMissing:
 				pruneVertexFailure(
 					paySession, route, errSource, false,
 				)
 				continue
 
-			// If the next hop in the route wasn't known or
-			// offline, we'll only the channel which we attempted
-			// to route over. This is conservative, and it can
-			// handle faulty channels between nodes properly.
-			// Additionally, this guards against routing nodes
-			// returning errors in order to attempt to black list
-			// another node.
+				// If the next hop in the route wasn't known or
+				// offline, we'll only the channel which we attempted
+				// to route over. This is conservative, and it can
+				// handle faulty channels between nodes properly.
+				// Additionally, this guards against routing nodes
+				// returning errors in order to attempt to black list
+				// another node.
 			case *lnwire.FailUnknownNextPeer:
 				pruneEdgeFailure(paySession, route, errSource)
 				continue
 
-			// If the node wasn't able to forward for which ever
-			// reason, then we'll note this and continue with the
-			// routes.
+				// If the node wasn't able to forward for which ever
+				// reason, then we'll note this and continue with the
+				// routes.
 			case *lnwire.FailTemporaryNodeFailure:
 				pruneVertexFailure(
 					paySession, route, errSource, false,
@@ -1957,9 +2021,9 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 				)
 				continue
 
-			// If we get a permanent channel or node failure, then
-			// we'll note this (exclude the vertex/edge), and
-			// continue with the rest of the routes.
+				// If we get a permanent channel or node failure, then
+				// we'll note this (exclude the vertex/edge), and
+				// continue with the rest of the routes.
 			case *lnwire.FailPermanentChannelFailure:
 				pruneEdgeFailure(paySession, route, errSource)
 				continue
@@ -1978,7 +2042,6 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 // error.
 func pruneVertexFailure(paySession *paymentSession, route *Route,
 	errSource *btcec.PublicKey, nextNode bool) {
-
 	// By default, we'll try to prune the node that actually sent us the
 	// error.
 	errNode := NewVertex(errSource)
@@ -2004,7 +2067,6 @@ func pruneVertexFailure(paySession *paymentSession, route *Route,
 // error.
 func pruneEdgeFailure(paySession *paymentSession, route *Route,
 	errSource *btcec.PublicKey) {
-
 	// As this error indicates that the target channel was unable to carry
 	// this HTLC (for w/e reason), we'll query the index to find the
 	// _outgoing_ channel the source of the error was meant to pass the
@@ -2254,8 +2316,8 @@ func (r *ChannelRouter) IsStaleEdgePolicy(chanID lnwire.ShortChannelID,
 	case flags&lnwire.ChanUpdateDirection == 0:
 		return !edge1Timestamp.Before(timestamp)
 
-	// Similarly, a flag set of 1 indicates this is an announcement for the
-	// "second" node in the channel.
+		// Similarly, a flag set of 1 indicates this is an announcement for the
+		// "second" node in the channel.
 	case flags&lnwire.ChanUpdateDirection == 1:
 		return !edge2Timestamp.Before(timestamp)
 	}

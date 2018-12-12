@@ -920,6 +920,133 @@ func TestSendPaymentErrorPathPruning(t *testing.T) {
 	}
 }
 
+// TestSendSpiderShortestPathSucceed checks that the function picks the shortest path and use it
+// to send payment
+func TestSendSpiderShortestPathSucceed(t *testing.T) {
+	t.Parallel()
+
+	const startingBlockHeight = 101
+	// load test topology from outing/testdata/basic_graph.json
+	ctx, cleanUp, err := createTestCtxFromFile(startingBlockHeight, basicGraphFilePath)
+	defer cleanUp()
+	if err != nil {
+		t.Fatalf("unable to create router: %v", err)
+	}
+
+	// Craft a LightningPayment struct that'll send a payment from roasbeef
+	// to luo ji for 1000 satoshis.
+	var payHash [32]byte
+	paymentAmt := lnwire.NewMSatFromSatoshis(1000)
+	payment := LightningPayment{
+		Target:      ctx.aliases["luoji"],
+		Amount:      paymentAmt,
+		FeeLimit:    noFeeLimit,
+		PaymentHash: payHash,
+	}
+
+	var preImage [32]byte
+	copy(preImage[:], bytes.Repeat([]byte{9}, 32))
+
+	// We'll modify the SendToSwitch to return the preimage that we generated above
+	ctx.router.cfg.SendToSwitch = func(firstHop lnwire.ShortChannelID,
+		_ *lnwire.UpdateAddHTLC, _ *sphinx.Circuit) ([32]byte, error) {
+
+		return preImage, nil
+	}
+
+	// Send off the payment request to the router. Direct to luo ji should have
+	// been selected, and the payment should succeed.
+	paymentPreImage, route, err := ctx.router.SendSpider(&payment, ShortestPath)
+	if err != nil {
+		t.Fatalf("unable to send payment: %v", err)
+	} else {
+	}
+
+	// The route selected should have only one hop
+	if len(route.Hops) != 1 {
+		t.Fatalf("incorrect route length: expected %v got %v", 1,
+			len(route.Hops))
+	}
+
+	// The preimage should match up with the once created above.
+	if !bytes.Equal(paymentPreImage[:], preImage[:]) {
+		t.Fatalf("incorrect preimage used: expected %x got %x",
+			preImage[:], paymentPreImage[:])
+	}
+
+	// The route should have satoshi as the first hop.
+	if route.Hops[0].Channel.Node.Alias != "luoji" {
+		t.Fatalf("route should go through luoji as first hop, "+
+			"instead passes through: %v",
+			route.Hops[0].Channel.Node.Alias)
+	}
+}
+
+// TestSendSpiderShortestPathFail checks that the payment will fail if
+// the shortest path is broken
+func TestSendSpiderShortestPathFail(t *testing.T) {
+	t.Parallel()
+
+	const startingBlockHeight = 101
+	// load test topology from outing/testdata/basic_graph.json
+	ctx, cleanUp, err := createTestCtxFromFile(startingBlockHeight, basicGraphFilePath)
+	defer cleanUp()
+	if err != nil {
+		t.Fatalf("unable to create router: %v", err)
+	}
+
+	// Craft a LightningPayment struct that'll send a payment from roasbeef
+	// to luo ji for 1000 satoshis.
+	var payHash [32]byte
+	paymentAmt := lnwire.NewMSatFromSatoshis(1000)
+	payment := LightningPayment{
+		Target:      ctx.aliases["luoji"],
+		Amount:      paymentAmt,
+		FeeLimit:    noFeeLimit,
+		PaymentHash: payHash,
+	}
+
+	var preImage [32]byte
+	copy(preImage[:], bytes.Repeat([]byte{9}, 32))
+
+	sourceNode := ctx.router.selfNode
+
+	// We'll modify the SendToSwitch method that's been set within the
+	// router's configuration to ignore the path that has luo ji as the
+	// first hop. This should force the router to instead take the
+	// available two hop path (through satoshi).
+	ctx.router.cfg.SendToSwitch = func(firstHop lnwire.ShortChannelID,
+		_ *lnwire.UpdateAddHTLC, _ *sphinx.Circuit) ([32]byte, error) {
+
+		roasbeefLuoji := lnwire.NewShortChanIDFromInt(689530843)
+		if firstHop == roasbeefLuoji {
+			pub, err := sourceNode.PubKey()
+			if err != nil {
+				return preImage, err
+			}
+			return [32]byte{}, &htlcswitch.ForwardingError{
+				ErrorSource: pub,
+				// TODO(roasbeef): temp node failure should be?
+				FailureMessage: &lnwire.FailTemporaryChannelFailure{},
+			}
+		}
+
+		return preImage, nil
+	}
+
+	// Send off the payment request to the router. Direct to luo ji should have
+	// been selected. Since we manually broke that channel, this payment should
+	// fail.
+	_, _, err = ctx.router.SendSpider(&payment, ShortestPath)
+	if err == nil {
+		t.Fatalf("payment should have failed")
+	} else {
+		if err.Error() != "unable to route payment to destination: TemporaryChannelFailure" {
+			t.Fatalf("payment should have failed due to forwarding error, but got %v", err)
+		}
+	}
+}
+
 // TestAddProof checks that we can update the channel proof after channel
 // info was added to the database.
 func TestAddProof(t *testing.T) {

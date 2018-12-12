@@ -2634,6 +2634,11 @@
         "fee_limit": {
           "$ref": "#/definitions/lnrpcFeeLimit",
           "description": "*\nThe maximum number of satoshis that will be paid as a fee of the payment.\nThis value can be represented either as a percentage of the amount being\nsent, or as a fixed amount of the maximum fee the user is willing the pay to\nsend the payment."
+        },
+        "spiderAlgo": {
+          "type": "integer",
+          "format": "int32",
+          "description": "*\nThe Spider routing algorithm to use. Relationship between values and algorithms\nis defined in the beginning of routing/router.go. Zero means not using Spider."
         }
       }
     },

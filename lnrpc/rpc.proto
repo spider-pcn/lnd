@@ -717,6 +717,12 @@ message SendRequest {
     send the payment.
     */
     FeeLimit fee_limit = 8;
+
+    /**
+    The Spider routing algorithm to use. Relationship between values and algorithms
+    is defined in the beginning of routing/router.go. Zero means not using Spider.
+    */
+    int32 spiderAlgo = 9;
 }
 message SendResponse {
     string payment_error = 1 [json_name = "payment_error"];
