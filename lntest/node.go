@@ -340,7 +340,10 @@ func (hn *HarnessNode) start(lndError chan<- error) error {
 	if hn.cfg.Delay != 0 {
 		delayCmdStr := fmt.Sprintf("sudo tcset lo --port %v --delay %vms --add", hn.cfg.P2PPort, hn.cfg.Delay)
 		delayCmd := exec.Command("sh", "-c", delayCmdStr)
-		delayCmd.Run()
+		err := delayCmd.Run()
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := hn.cmd.Start(); err != nil {
