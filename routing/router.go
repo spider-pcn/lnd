@@ -332,16 +332,9 @@ func New(cfg Config) (*ChannelRouter, error) {
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
 // destination information. The information added corresponds to the minimum balance on the
 // path that was just queried and updates the time at which this probe was completed.
-func (r *ChannelRouter) UpdateDestRouteBalances(msg *lnwire.ProbeRouteChannelBalances) {
-	dest := Vertex(msg.Route[0])
+func (r *ChannelRouter) updateDestRouteBalances(msg *lnwire.ProbeRouteChannelBalances, currentRoute []Vertex) {
+	dest := currentRoute[len(currentRoute)-1]
 	fmt.Printf("destination is %v\n", dest)
-
-	// reverse the route because probe comes back reversed
-	reversedRoute := make([]Vertex, len(msg.Route))
-	for i := len(reversedRoute)/2 - 1; i >= 0; i-- {
-		opp := len(reversedRoute) - 1 - i
-		reversedRoute[i], reversedRoute[opp] = Vertex(msg.Route[opp]), Vertex(msg.Route[i])
-	}
 
 	// compute minimum balance on route
 	var minBal lnwire.MilliSatoshi
@@ -354,15 +347,16 @@ func (r *ChannelRouter) UpdateDestRouteBalances(msg *lnwire.ProbeRouteChannelBal
 
 	// create new tuple with timestamp of now
 	routeInfoEntry := RouteInfo{
-		route:       reversedRoute,
+		route:       currentRoute,
 		minBalance:  minBal,
 		lastUpdated: time.Now(),
 	}
 
-	// insert into map
+	// insert into map which has destination to an array of
+	// routeInfo[]: one entry per path among the k paths
 	var routes []RouteInfo
 	if routes, ok := r.missionControl.destRouteBalances[dest]; ok {
-		if index := findRouteInRouteSlice(routes, reversedRoute); index != -1 {
+		if index := findRouteInRouteSlice(routes, currentRoute); index != -1 {
 			routes[index] = routeInfoEntry
 		} else {
 			routes = append(routes, routeInfoEntry)
@@ -371,8 +365,45 @@ func (r *ChannelRouter) UpdateDestRouteBalances(msg *lnwire.ProbeRouteChannelBal
 		routes = append(routes, routeInfoEntry)
 	}
 	r.missionControl.destRouteBalances[dest] = routes
+}
 
-	// send out a new probe if you have some outstanding payment or have a separate goroutine do that
+// UpdateDestRouteBalances is called when a probe is completed to update the table with per
+// destination information. The information added corresponds to the minimum balance on the
+// path that was just queried and updates the time at which this probe was completed.
+func (r *ChannelRouter) HandleCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
+	// reverse the route because probe comes back reversed
+	// create a new array of type Vertex also to avoid casts from lnwire.Vertex to Vertex
+	// and vice versa
+	reversedRoute := make([]Vertex, len(msg.Route))
+	for i := len(reversedRoute)/2 - 1; i >= 0; i-- {
+		opp := len(reversedRoute) - 1 - i
+		reversedRoute[i], reversedRoute[opp] = Vertex(msg.Route[opp]), Vertex(msg.Route[i])
+		msg.Route[i], msg.Route[opp] = msg.Route[opp], msg.Route[i]
+	}
+
+	// update state in the per destination table
+	r.updateDestRouteBalances(msg, reversedRoute)
+
+	dest := reversedRoute[len(reversedRoute)-1]
+	fmt.Printf("destination is %v\n", dest)
+
+	// if destination has any more outstanding payments send out a new probe
+	if numPayments, ok := r.missionControl.paymentsPerDest[dest]; ok && numPayments > 0 {
+		//TODO: sleep for a little while
+		time.Sleep(100 * time.Millisecond)
+
+		// reset entries in the probe message
+		msg.HopNum = 0
+		msg.ProbeCompleted = 0
+		msg.CurrentNode = msg.Sender
+
+		for i := range msg.RouterChannelBalances {
+			msg.RouterChannelBalances[i] = 0
+		}
+
+		// send the probe to the first hop which will propagate it onwards
+		r.cfg.SendProbeToFirstHop(msg)
+	}
 }
 
 // findRouteInRouteSlice is a helper function that finds the struct associated with a particular route

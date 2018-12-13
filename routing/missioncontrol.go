@@ -73,6 +73,11 @@ type missionControl struct {
 	// Every destination maps to a set of tuples - each tuple has a route, the minimum
 	// balance on that route and the timestamp of when that route was updated
 	destRouteBalances map[Vertex][]RouteInfo
+
+	// paymentsPerDest keeps track of the number of outstanding payments to every destination
+	// This helps control the probes in flight and ends them when there ar eno further outstanding
+	// payments
+	paymentsPerDest map[Vertex]uint32
 }
 
 type RouteInfo struct {

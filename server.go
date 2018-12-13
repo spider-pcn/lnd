@@ -1014,9 +1014,9 @@ func (s *server) respondToProbe(msg *lnwire.ProbeRouteChannelBalances) {
 			s.ForwardCompletedProbe(msg)
 			srvrLog.Infof("rev direction processing probe at hopnum=%d", msg.HopNum)
 		} else {
-			//TODO:  probe finished propagating
 			// update the table with minimum balance for the path
-			s.chanRouter.UpdateDestRouteBalances(msg)
+			// and send out a new probe is payment hasn't completed
+			s.chanRouter.HandleCompletedProbe(msg)
 			srvrLog.Infof("finished probe")
 
 		}

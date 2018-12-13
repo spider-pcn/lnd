@@ -12015,7 +12015,7 @@ type testCase struct {
 }
 
 var testsCases = []*testCase{
-	{
+	/*{
 		name: "onchain fund recovery",
 		test: testOnchainFundRecovery,
 	},
@@ -12078,12 +12078,12 @@ var testsCases = []*testCase{
 	{
 		name: "single-hop send to route",
 		test: testSingleHopSendToRoute,
-	},
+	},*/
 	{
 		name: "multi-hop send to route",
 		test: testMultiHopSendToRoute,
 	},
-	{
+	/*{
 		name: "send to route error propagation",
 		test: testSendToRouteErrorPropagation,
 	},
@@ -12219,7 +12219,7 @@ var testsCases = []*testCase{
 	{
 		name: "send update disable channel",
 		test: testSendUpdateDisableChannel,
-	},
+	},*/
 }
 
 // TestLightningNetworkDaemon performs a series of integration tests amongst a
