@@ -388,7 +388,6 @@ func (r *ChannelRouter) HandleCompletedProbe(msg *lnwire.ProbeRouteChannelBalanc
 		reversedRoute[i], reversedRoute[opp] = Vertex(msg.Route[opp]), Vertex(msg.Route[i])
 		msg.Route[i], msg.Route[opp] = msg.Route[opp], msg.Route[i]
 	}
-
 	// update state in the per destination table
 	r.updateDestRouteBalances(msg, reversedRoute)
 
@@ -1702,7 +1701,7 @@ func (r *ChannelRouter) SendPayment(payment *LightningPayment) ([32]byte, *Route
 func (r *ChannelRouter) SendToRoute(routes []*Route,
 	payment *LightningPayment) ([32]byte, *Route, error) {
 
-	// initiate probe here for the first route
+	/* initiate probe here for the first route
 	// Craft a probe packet to send out along this route
 	/*senderNode := r.selfNode.PubKeyBytes
 	pathLength := len(routes[0].Hops) + 1 // because sender is ignored in hops

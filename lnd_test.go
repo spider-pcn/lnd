@@ -3675,7 +3675,8 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	numNodes := 5                                  // number of nodes in the network
 	nodes := make([]*lntest.HarnessNode, numNodes) // create a list for nodes
 	nodeNames := []string{"1", "2", "3", "4", "5"} // name of the nodes
-	nodeDelays := []int{100, 200, 50, 50, 50}
+	//nodeDelays := []int{100, 200, 50, 50, 50}
+	nodeDelays := []int{0, 0, 0, 0, 0}
 
 	numChannels := 6 // number of channels in the network
 	// define the channels by specifying both ends (as index of node)
