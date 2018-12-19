@@ -23,12 +23,6 @@ import (
 	"github.com/lightningnetwork/lnd/ticker"
 )
 
-// For statistics:
-import (
-  "gopkg.in/zabawaba99/firego.v1"
-)
-
-
 const (
 	// DefaultFwdEventInterval is the duration between attempts to flush
 	// pending forwarding events to disk.
@@ -371,38 +365,6 @@ func (s *Switch) getSwitchKey() string {
 	return switchKey
 }
 
-/// Runs a while true loop in the background. Every 1 second, it updates the
-/// current balance for each of the links from this switch.
-func (s *Switch) updateFirebase() {
-	// Important to do this before the loop, because switch contents keep
-	// changing.
-	switchKey := s.getSwitchKey()
-	for {
-		vals := make(map[string] map[string] []string)
-		i := 0
-		// FIXME: use authentication
-		fb := firego.New("https://lnd-test-1dd52.firebaseio.com/" + EXP_NAME + "/" + switchKey, nil)
-		vals["linksInfo"] = make(map[string] []string)
-		for _, link := range s.linkIndex {
-			i += 1
-			// for each switch + channelLink combination, we create a new key.
-			chanID := fmt.Sprintf("%v", link.ShortChanID())
-			bal := fmt.Sprintf("%v", link.Bandwidth().ToSatoshis())
-			debug_print(fmt.Sprintf("switch: %s, chanId: %s, bal %s\n", switchKey,
-									chanID, bal))
-			updates, sent, recv := link.Stats()
-			vals["linksInfo"][chanID] = append(vals["linksInfo"][chanID], fmt.Sprintf("%v", updates),
-							fmt.Sprintf("%v", sent.ToSatoshis()),
-							fmt.Sprintf("%v", recv.ToSatoshis()), bal)
-		}
-		// Push adds new elements to the location with a timestamp - essentially
-		// firebase's equivalent of an ordered 'list'
-		if _, err := fb.Push(vals); err != nil {
-			fmt.Println("error when logging to firebase")
-		}
-		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
-	}
-}
 // SendHTLC is used by other subsystems which aren't belong to htlc switch
 // package in order to send the htlc update.
 func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
@@ -1796,9 +1758,6 @@ func (s *Switch) Start() error {
 		s.Stop()
 		log.Errorf("unable to reforward responses: %v", err)
 		return err
-	}
-	if SPIDER_FLAG && LOG_FIREBASE {
-		go s.updateFirebase()
 	}
 
 	return nil

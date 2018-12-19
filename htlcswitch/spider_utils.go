@@ -15,7 +15,7 @@ var SPIDER_QUEUE_LENGTH_SCALE int = 8
 var FILENAME string = "./log_test.txt"
 var EXP_NAME string = "DEBUG"
 var SWITCH_NAME string = "DEFAULT"
-var UPDATE_INTERVAL int = 1000
+var UPDATE_INTERVAL int = 10
 
 func hash(s string) uint32 {
         h := fnv.New32a()

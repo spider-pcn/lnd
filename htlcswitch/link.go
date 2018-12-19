@@ -353,15 +353,37 @@ func (l *channelLink) updateFirebase()  {
 	switchKey := l.cfg.Switch.getSwitchKey()
 	for {
 		// going to store queue information, for this particular channel.
-		vals := make(map[string] map[string] []string)
+		vals := make(map[string] map[string] string)
+
 		fb := firego.New("https://lnd-test-1dd52.firebaseio.com/" + EXP_NAME + "/" + switchKey, nil)
 		chanID := fmt.Sprintf("%v", l.ShortChanID())
-		vals["queue"] = make(map[string] []string)
+
 		qlen := fmt.Sprintf("%d", l.overflowQueue.Length())
 		totalAmt := fmt.Sprintf("%v", l.overflowQueue.TotalHtlcAmount().ToSatoshis())
-
-		vals["queue"][chanID] = append(vals["queue"][chanID],
-												qlen, totalAmt)
+		snapshot := l.channel.StateSnapshot()
+		sent := fmt.Sprintf("%v", snapshot.TotalMSatSent.ToSatoshis())
+		rcvd := fmt.Sprintf("%v", snapshot.TotalMSatReceived.ToSatoshis())
+		capacity := fmt.Sprintf("%v", snapshot.Capacity)
+		chainHash := fmt.Sprintf("%v", snapshot.ChainHash)
+		locBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.LocalBalance.ToSatoshis())
+		remBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.RemoteBalance.ToSatoshis())
+		commitHt := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitHeight)
+		commitFee := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitFee)
+		bandwidth := fmt.Sprintf("%v", l.Bandwidth().ToSatoshis())
+		curVals := make(map[string] string)
+		curVals["qlen"] = qlen
+		curVals["qTotalAmt"] = totalAmt
+		curVals["sent"] = sent
+		curVals["rcvd"] = rcvd
+		curVals["capacity"] = capacity
+		curVals["chainHash"] = chainHash
+		curVals["locBal"] = locBal
+		curVals["remBal"] = remBal
+		curVals["commitHeight"] = commitHt
+		curVals["commitFee"] = commitFee
+		curVals["bandwidth"] = bandwidth
+		// set it for uploading
+		vals[chanID] = curVals
 		if _, err := fb.Push(vals); err != nil {
 			fmt.Println("error when logging to firebase")
 		}
@@ -1906,6 +1928,12 @@ func (l *channelLink) ChanID() lnwire.ChannelID {
 func (l *channelLink) Bandwidth() lnwire.MilliSatoshi {
 	channelBandwidth := l.channel.AvailableBalance()
 	overflowBandwidth := l.overflowQueue.TotalHtlcAmount()
+	// pari (spider): after we add the queues, overflowBandwidth can become greater than
+	// channelBandwidth - before presumably this was never happening because the
+	// packet would have been dropped earlier
+	if channelBandwidth < overflowBandwidth {
+		return 0
+	}
 
 	// To compute the total bandwidth, we'll take the current available
 	// bandwidth, then subtract the overflow bandwidth as we'll eventually
