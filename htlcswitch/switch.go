@@ -387,13 +387,13 @@ func (s *Switch) updateFirebase() {
 			i += 1
 			// for each switch + channelLink combination, we create a new key.
 			chanID := fmt.Sprintf("%v", link.ShortChanID())
-			bal := fmt.Sprintf("%v", link.Bandwidth())
+			bal := fmt.Sprintf("%v", link.Bandwidth().ToSatoshis())
 			debug_print(fmt.Sprintf("switch: %s, chanId: %s, bal %s\n", switchKey,
 									chanID, bal))
 			updates, sent, recv := link.Stats()
 			vals["linksInfo"][chanID] = append(vals["linksInfo"][chanID], fmt.Sprintf("%v", updates),
-							fmt.Sprintf("%v", sent),
-							fmt.Sprintf("%v", recv), bal)
+							fmt.Sprintf("%v", sent.ToSatoshis()),
+							fmt.Sprintf("%v", recv.ToSatoshis()), bal)
 		}
 		// Push adds new elements to the location with a timestamp - essentially
 		// firebase's equivalent of an ordered 'list'

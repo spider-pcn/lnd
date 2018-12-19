@@ -358,7 +358,7 @@ func (l *channelLink) updateFirebase()  {
 		chanID := fmt.Sprintf("%v", l.ShortChanID())
 		vals["queue"] = make(map[string] []string)
 		qlen := fmt.Sprintf("%d", l.overflowQueue.Length())
-		totalAmt := fmt.Sprintf("%v", l.overflowQueue.TotalHtlcAmount())
+		totalAmt := fmt.Sprintf("%v", l.overflowQueue.TotalHtlcAmount().ToSatoshis())
 
 		vals["queue"][chanID] = append(vals["queue"][chanID],
 												qlen, totalAmt)
