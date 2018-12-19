@@ -20,6 +20,10 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/ticker"
 )
+// spider imports
+import (
+	"gopkg.in/zabawaba99/firego.v1"
+)
 
 func init() {
 	prand.Seed(time.Now().UnixNano())
@@ -345,6 +349,26 @@ func NewChannelLink(cfg ChannelLinkConfig,
 	}
 }
 
+func (l *channelLink) updateFirebase()  {
+	switchKey := l.cfg.Switch.getSwitchKey()
+	for {
+		// going to store queue information, for this particular channel.
+		vals := make(map[string] map[string] []string)
+		fb := firego.New("https://lnd-test-1dd52.firebaseio.com/" + EXP_NAME + "/" + switchKey, nil)
+		chanID := fmt.Sprintf("%v", l.ShortChanID())
+		vals["queue"] = make(map[string] []string)
+		qlen := fmt.Sprintf("%d", l.overflowQueue.Length())
+		totalAmt := fmt.Sprintf("%v", l.overflowQueue.TotalHtlcAmount())
+
+		vals["queue"][chanID] = append(vals["queue"][chanID],
+												qlen, totalAmt)
+		if _, err := fb.Push(vals); err != nil {
+			fmt.Println("error when logging to firebase")
+		}
+		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
+	}
+}
+
 // This will just periodically check if the minimum amount to be sent from the
 // Queue is lower than the available balance, and then wake up the queue.
 func (l *channelLink) startQueueWatcher() {
@@ -358,14 +382,14 @@ func (l *channelLink) startQueueWatcher() {
 		// popping the HTLC off the queue, all those relevant checks will be
 		// performed again, and if anything fails, the HTLC will be added back to
 		// the queue.
-		if (channelAmt >= minOverflowAmt && minOverflowAmt != 0) {
-            debug_print(fmt.Sprintf("in startQueueWatcher, chanID: %s, channelAmt: %d, minOverflowAmt: %d\n", l.channel.ShortChanID(), channelAmt, minOverflowAmt));
+		if (channelAmt > minOverflowAmt && minOverflowAmt != 0) {
+						debug_print(fmt.Sprintf("in startQueueWatcher, chanID: %s, channelAmt: %d, minOverflowAmt: %d\n", l.channel.ShortChanID(), channelAmt, minOverflowAmt));
 			// if no items in the queue, will not have any effect.
 			debug_print(fmt.Sprintf("signaling to the overflow queue, for channel\n: %s\n", l.shortChanID))
 			debug_print(fmt.Sprintf("current queue len at this node is: %d\n", l.overflowQueue.queueLen))
 			l.overflowQueue.SignalFreeSlot()
 		}
-		time.Sleep(50*time.Millisecond)
+		time.Sleep(500*time.Millisecond)
 	}
 }
 
@@ -383,9 +407,15 @@ func (l *channelLink) Start() error {
 		log.Warn(err)
 		return err
 	}
-    if (SPIDER_FLAG) {
-        go l.startQueueWatcher()
-    }
+
+	if (SPIDER_FLAG) {
+		go l.startQueueWatcher()
+	}
+
+	if (LOG_FIREBASE) {
+		go l.updateFirebase()
+	}
+
 	log.Infof("ChannelLink(%v) is starting", l)
 
 	l.mailBox.ResetMessages()
@@ -1886,6 +1916,7 @@ func (l *channelLink) Bandwidth() lnwire.MilliSatoshi {
 	// If the channel reserve is greater than the total available balance
 	// of the link, just return 0.
 	reserve := lnwire.NewMSatFromSatoshis(l.channel.LocalChanReserve())
+	debug_print(fmt.Sprintf("reserve %v", reserve))
 	if linkBandwidth < reserve {
 		return 0
 	}
@@ -2062,7 +2093,6 @@ func (l *channelLink) HtlcSatifiesPolicy(payHash [32]byte,
 // NOTE: Part of the ChannelLink interface.
 func (l *channelLink) Stats() (uint64, lnwire.MilliSatoshi, lnwire.MilliSatoshi) {
 	snapshot := l.channel.StateSnapshot()
-
 	return snapshot.ChannelCommitment.CommitHeight,
 		snapshot.TotalMSatSent,
 		snapshot.TotalMSatReceived

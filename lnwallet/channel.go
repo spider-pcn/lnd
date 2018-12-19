@@ -23,6 +23,9 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
 )
+import (
+	"os"
+)
 
 var zeroHash chainhash.Hash
 
@@ -5907,6 +5910,18 @@ func (lc *LightningChannel) availableBalance() (lnwire.MilliSatoshi, int64) {
 	// If we are the channel initiator, we must remember to subtract the
 	// commitment fee from our available balance.
 	commitFee := feePerKw.FeeForWeight(commitWeight)
+	str := fmt.Sprintf("commitFee: %v", commitFee)
+	f, err := os.OpenFile("./commitFee.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		panic(err)
+	}
+
+	defer f.Close()
+
+	if _, err = f.WriteString(str); err != nil {
+		panic(err)
+	}
+
 	if lc.channelState.IsInitiator {
 		ourBalance -= lnwire.NewMSatFromSatoshis(commitFee)
 	}

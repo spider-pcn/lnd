@@ -18,7 +18,9 @@ import (
 ///   @n: testing network created using helper utility newThreeHopNetwork
 ///		@delaySeconds: sleep at the start so we can test various scenarios.
 ///		@err_ch: returns the error value on this channel
-func SendMoneyWithDelay(n *threeHopNetwork, satoshis btcutil.Amount, sendingPeer, receivingPeer lnpeer.Peer, delaySeconds int64, err_ch chan error, path ...*channelLink) {
+func SendMoneyWithDelay(n *threeHopNetwork, satoshis btcutil.Amount,
+			sendingPeer, receivingPeer lnpeer.Peer, delaySeconds int64, err_ch chan
+			error, path ...*channelLink) {
 	time.Sleep(time.Duration(delaySeconds) * time.Second)
 	amount := lnwire.NewMSatFromSatoshis(satoshis)
 	htlcAmt, totalTimelock, hops := generateHops(amount, testStartingHeight,
@@ -75,9 +77,11 @@ func TestSpiderTemporarilyInsufficientFunds(t *testing.T) {
 	// payment should succeed, thereby letting the Alice -> Carol payment to
 	// succeed as well.
 	c := make(chan error)
-	go SendMoneyWithDelay(n, 4 * btcutil.SatoshiPerBitcoin, n.aliceServer, n.carolServer, 0, c, n.firstBobChannelLink, n.carolChannelLink)
+	go SendMoneyWithDelay(n, 4 * btcutil.SatoshiPerBitcoin, n.aliceServer,
+			n.carolServer, 0, c, n.firstBobChannelLink, n.carolChannelLink)
 	// send money on carol -> bob after a 2 seconds delay
-	go SendMoneyWithDelay(n, 2 * btcutil.SatoshiPerBitcoin, n.carolServer, n.bobServer, 2, make(chan error), n.secondBobChannelLink)
+	go SendMoneyWithDelay(n, 2 * btcutil.SatoshiPerBitcoin, n.carolServer,
+			n.bobServer, 2, make(chan error), n.secondBobChannelLink)
 
 	// we only need to check if alice -> carol payment succeeded or not. Since
 	// initially there wasn't enough money on the bob -> carol channel, this
@@ -175,7 +179,7 @@ func TestSpiderTemporarilyInsufficientFundsMultiplePayments (t *testing.T) {
 // removing that dependency from newThreeHopNetwork(...)
 // To run this: change the name of the test to start with "Test", and then just
 // run the test as usual with go test -run "RegexOfTestToRun"
-func LongRunningFlow (t *testing.T) {
+func TestSpiderLongRunningFlow (t *testing.T) {
 	NUM_PAYMENTS := 10000
 	t.Parallel()
 	n, cleanUp := StartThreeHopNetwork(50000, 50000, t)

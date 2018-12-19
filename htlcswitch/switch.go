@@ -26,7 +26,6 @@ import (
 // For statistics:
 import (
   "gopkg.in/zabawaba99/firego.v1"
-	"hash/fnv"
 )
 
 
@@ -356,47 +355,52 @@ func (s *Switch) ProcessContractResolution(msg contractcourt.ResolutionMsg) erro
 	return nil
 }
 
-
-func hash(s string) uint32 {
-        h := fnv.New32a()
-        h.Write([]byte(s))
-        return h.Sum32()
-}
-
-/// Runs a while true loop in the background. Every 1 second, it updates the
-/// current balance for each of the links from this switch. 
-func (s *Switch) updateFirebase() {
+func (s *Switch) getSwitchKey() string {
 	// First, we need a unique identifier for the switch so we can use it as a
 	// key when logging the information online. There does not seem to be any
 	// unique identifier already specified (?), so we generate one based on the
-	// hash of the values of the fields within the switch (these should
-	// presumably always be unique?). We hash it because the values are a mix of
-	// various characters, and there was an error when trying to use that as a
-	// key directly in firebase.
+	// hash of the values of the fields within the switch's cfg - since this does
+	// not seem to change.
 	// Note: %v just prints out the structs field values etc unless a specific
 	// representation is specified.
-	switchKey := fmt.Sprintf("%v", s)
+	switchKey := fmt.Sprintf("%v", s.cfg)
 	// randomly truncate.
 	switchKey = switchKey[0:100]
 	switchKey = fmt.Sprintf("%v", hash(switchKey))
 	debug_print("updated switchKey: " + switchKey)
+	return switchKey
+}
 
+/// Runs a while true loop in the background. Every 1 second, it updates the
+/// current balance for each of the links from this switch.
+func (s *Switch) updateFirebase() {
+	// Important to do this before the loop, because switch contents keep
+	// changing.
+	switchKey := s.getSwitchKey()
 	for {
-		vals := make(map[string]string)
+		vals := make(map[string] map[string] []string)
 		i := 0
 		// FIXME: use authentication
-		f := firego.New("https://lnd-test-1dd52.firebaseio.com/" + switchKey, nil)
-		for _, l := range s.linkIndex {
+		fb := firego.New("https://lnd-test-1dd52.firebaseio.com/" + EXP_NAME + "/" + switchKey, nil)
+		vals["linksInfo"] = make(map[string] []string)
+		for _, link := range s.linkIndex {
 			i += 1
 			// for each switch + channelLink combination, we create a new key.
-			chanID := fmt.Sprintf("%v", l.ShortChanID())
-			bal := fmt.Sprintf("%v", l.Bandwidth())
-			vals[chanID] = bal
+			chanID := fmt.Sprintf("%v", link.ShortChanID())
+			bal := fmt.Sprintf("%v", link.Bandwidth())
+			debug_print(fmt.Sprintf("switch: %s, chanId: %s, bal %s\n", switchKey,
+									chanID, bal))
+			updates, sent, recv := link.Stats()
+			vals["linksInfo"][chanID] = append(vals["linksInfo"][chanID], fmt.Sprintf("%v", updates),
+							fmt.Sprintf("%v", sent),
+							fmt.Sprintf("%v", recv), bal)
 		}
-		if err := f.Set(vals); err != nil {
+		// Push adds new elements to the location with a timestamp - essentially
+		// firebase's equivalent of an ordered 'list'
+		if _, err := fb.Push(vals); err != nil {
 			fmt.Println("error when logging to firebase")
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
 	}
 }
 // SendHTLC is used by other subsystems which aren't belong to htlc switch

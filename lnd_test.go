@@ -3660,8 +3660,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	// We want the fee to be absolutely zero.
 	// Note that vanilla LND does now allow zero fee. Modification has been done.
 	baseFee := int64(0)
-	feeRate := 0
-	
+	feeRate := 0	
 	// Set RPC call timeout
 	// It will be used when we make RPC calls. 
 	timeout := time.Duration(time.Second * 15)
