@@ -1799,6 +1799,10 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 		// get the K shortest paths to this destination
 		dest := NewVertex(payment.Target)
 		routeChoices, err := r.getKShortestPaths(dest, payment)
+		if err != nil {
+			log.Errorf("No paths for waterfilling found to %v", dest)
+			return [32]byte{}, nil, nil
+		}
 
 		// check if probes are already in progress to this destination
 		// otherwise initiate a probe per path
@@ -1856,7 +1860,7 @@ func (r *ChannelRouter) sendPaymentAsPerWaterfilling(routesAndBalances []RouteIn
 		// and send a new amount? but wouldn't you have exhausted all the balance
 		// in this process?
 
-		//routesAndBalances[i].minBalance -= payment.Amount
+		routesAndBalances[maxEntryId].minBalance -= payment.Amount
 		//r.missionControl.destRouteBalances.Store(dest, routesAndBalances)
 	}
 	return preImage, route, err
@@ -1962,7 +1966,6 @@ func (r *ChannelRouter) getKShortestPaths(dest Vertex, payment *LightningPayment
 			routes = append(routes, entry.route)
 		}
 		return routes, nil
-		// need to redo my data structure/figure that out
 	}
 
 	// create a dummy paymentSession to find shortest path

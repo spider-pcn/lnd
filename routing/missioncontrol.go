@@ -357,7 +357,7 @@ func (p *paymentSession) RequestShortestPath(payment *LightningPayment,
 	height uint32, finalCltvDelta uint16) (*Route, error) {
 
 	path, err := findSpiderShortestPath(nil, p.mc.graph, p.additionalEdges,
-		p.mc.selfNode, payment.Target, payment.Amount)
+		p.mc.selfNode, payment.Target, payment.Amount, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -376,6 +376,43 @@ func (p *paymentSession) RequestShortestPath(payment *LightningPayment,
 	}
 
 	return route, err
+}
+
+// RequestKShortestPath locates the k edge-disjoint shortest paths for the payment. It calls
+// findSpiderKShortestPaths to do the actual path-finding stuff. Please refer
+// to pathfind.go -> findSpiderKShortestPaths
+func (p *paymentSession) RequestKShortestPaths(payment *LightningPayment,
+	height uint32, finalCltvDelta uint16) ([]*Route, error) {
+	K := uint8(1)
+
+	paths, err := findSpiderKShortestPaths(nil, p.mc.graph, p.additionalEdges,
+		p.mc.selfNode, payment.Target, payment.Amount, K)
+	if err != nil {
+		log.Warnf("only found %d paths", len(paths))
+		if len(paths) == 0 {
+			return nil, err
+		}
+	}
+
+	var routes []*Route
+	for _, path := range paths {
+		// With the next candidate path found, we'll attempt to turn this into
+		// a route by applying the time-lock and fee requirements.
+		sourceVertex := Vertex(p.mc.selfNode.PubKeyBytes)
+		route, err := newRoute(
+			payment.Amount, payment.FeeLimit, sourceVertex, path, height,
+			finalCltvDelta,
+		)
+		if err != nil {
+			// TODO(roasbeef): return which edge/vertex didn't work
+			// out
+			log.Warnf("one route failed in k shortest paths")
+			return nil, err
+		}
+		routes = append(routes, route)
+	}
+
+	return routes, err
 }
 
 // RequestRoute returns a route which is likely to be capable for successfully

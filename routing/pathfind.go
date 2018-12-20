@@ -465,7 +465,8 @@ func edgeWeight(lockedAmt lnwire.MilliSatoshi, fee lnwire.MilliSatoshi,
 func findSpiderShortestPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
 	additionalEdges map[Vertex][]*channeldb.ChannelEdgePolicy,
 	sourceNode *channeldb.LightningNode, target *btcec.PublicKey,
-	amt lnwire.MilliSatoshi) ([]*ChannelHop, error) {
+	amt lnwire.MilliSatoshi,
+	edgesToIgnore map[uint64]bool) ([]*ChannelHop, error) {
 
 	var err error
 	if tx == nil {
@@ -557,6 +558,11 @@ func findSpiderShortestPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
 		// we shouldn't attempt to route through it.
 		edgeFlags := lnwire.ChanUpdateFlag(edge.Flags)
 		if edgeFlags&lnwire.ChanUpdateDisabled != 0 {
+			return
+		}
+
+		// if edge has been used in one of the past paths, ignore
+		if _, ok := edgesToIgnore[edge.ChannelID]; ok {
 			return
 		}
 
@@ -743,6 +749,36 @@ func findSpiderShortestPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
 	}
 
 	return pathEdges, nil
+}
+
+// findSpiderKShortestPaths is similar to findSpiderShortestPath. It does not consider whether
+// the payment can be sent or not, i.e. it ignores failures reported by previous
+// payment session, channel capacity, and fee limits and looks for edge disjoint
+// paths to the destination/target in order of length. It does consider minHTLC
+// policy set by nodes.
+func findSpiderKShortestPaths(tx *bolt.Tx, graph *channeldb.ChannelGraph,
+	additionalEdges map[Vertex][]*channeldb.ChannelEdgePolicy,
+	sourceNode *channeldb.LightningNode, target *btcec.PublicKey,
+	amt lnwire.MilliSatoshi, K uint8) ([][]*ChannelHop, error) {
+
+	var allPaths [][]*ChannelHop
+	edgesToIgnore := make(map[uint64]bool)
+	for i := uint8(0); i < K; i++ {
+		thisPath, err := findSpiderShortestPath(tx, graph, additionalEdges, sourceNode, target,
+			amt, edgesToIgnore)
+		if err != nil {
+			log.Warnf("Only found %d paths", i)
+			return allPaths, err
+		}
+
+		// add this path to set of paths and mark the edges as to be ignored in the next search
+		// for the shortest path
+		allPaths = append(allPaths, thisPath)
+		for _, c := range thisPath {
+			edgesToIgnore[c.ChannelID] = true
+		}
+	}
+	return allPaths, nil
 }
 
 func findPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
