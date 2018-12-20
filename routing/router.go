@@ -1802,32 +1802,9 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 
 		// check if probes are already in progress to this destination
 		// otherwise initiate a probe per path
-		if cnt, loaded := r.missionControl.paymentsPerDest.LoadOrStore(dest, 0); cnt.(int) == 0 {
+		if cnt, isOldDest := r.missionControl.paymentsPerDest.LoadOrStore(dest, 0); cnt.(int) == 0 {
 			r.missionControl.paymentsPerDest.Store(dest, cnt.(int)+1)
-
-			var entryList []RouteInfo
-			for i, curRoute := range routeChoices {
-				r.initiateProbe(curRoute, uint32(i))
-
-				// destination has never been encountered before
-				if loaded == false {
-					// add route entry to list of entries
-					entry := RouteInfo{
-						hopList:     r.convertRouteToVertex(route),
-						route:       curRoute,
-						minBalance:  0,
-						lastUpdated: time.Now(),
-						isEmpty:     true,
-					}
-
-					entryList = append(entryList, entry)
-				}
-			}
-
-			// put entry in the destination table if this dest was never encountered before
-			if loaded == false {
-				r.missionControl.destRouteBalances.Store(dest, entryList)
-			}
+			r.createNewProbesToDest(dest, routeChoices, isOldDest)
 
 			// new probes were sent, so wait for them to come back before sending payment
 			time.Sleep(5 * time.Millisecond)
@@ -1835,44 +1812,55 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 
 		// do the waterfilling calculation to figure out where this payment must be sent
 		if routesAndBalances, ok := r.missionControl.destRouteBalances.Load(dest); ok {
-			maxBalance := lnwire.MilliSatoshi(0)
-			maxRouteEntry := RouteInfo{}
-			maxEntryId := 0
-
-			// TODO (vibhaa): needs to be modified to compute exact waterfilling allocation
-			// right now just sending entire payment on the path
-			// with maximum balance
-			for i, entry := range routesAndBalances.([]RouteInfo) {
-				if entry.minBalance > maxBalance {
-					maxBalance = entry.minBalance
-					maxRouteEntry = entry
-					maxEntryId = i
-				}
-			}
-
-			// send on path with the maximum balance
-			// TODO:i send on multiple paths - each in a separate goroutine and keep collecting
-			// the results
-			preImage, route, err := r.SendToRoute([]*Route{maxRouteEntry.route}, payment)
-
-			if err == nil {
-				// TODO (vibhaa):
-				// in true WF, subtract amount sent from the total amount to be sent
-				// and send a new amount? but wouldn't you have exhausted all the balance
-				// in this process?
-
-				//routesAndBalances[i].minBalance -= payment.Amount
-				//r.missionControl.destRouteBalances.Store(dest, routesAndBalances)
-			}
-			return preImage, route, err
-
+			return r.sendPaymentAsPerWaterfilling(routesAndBalances.([]RouteInfo), payment)
 		} else {
 			log.Errorf("Probe didn't compelete in time or some error in retreiving probe info")
 			return [32]byte{}, nil, errors.New("Probe information unavailable for destination")
 		}
 
 	}
+
 	return [32]byte{}, nil, nil
+}
+
+// sendPaymentAsPerWaterfilling takes in a set of routes to the destination and their associated balances
+// and computes the Waterfilling assignment for them. Right now, payments are assumed to be indivisible, so
+// the units are sent on the path with the maximum available current balance
+// upon successful completion of the payment, no probe state or anything is changed
+func (r *ChannelRouter) sendPaymentAsPerWaterfilling(routesAndBalances []RouteInfo,
+	payment *LightningPayment) ([32]byte, *Route, error) {
+
+	maxBalance := lnwire.MilliSatoshi(0)
+	maxRouteEntry := RouteInfo{}
+	maxEntryId := 0
+
+	// TODO (vibhaa): needs to be modified to compute exact waterfilling allocation
+	// right now just sending entire payment on the path
+	// with maximum balance
+	for i, entry := range routesAndBalances {
+		if entry.minBalance > maxBalance {
+			maxBalance = entry.minBalance
+			maxRouteEntry = entry
+			maxEntryId = i
+		}
+	}
+
+	// send on path with the maximum balance
+	// TODO:i send on multiple paths - each in a separate goroutine and keep collecting
+	// the results
+	preImage, route, err := r.SendToRoute([]*Route{maxRouteEntry.route}, payment)
+
+	if err == nil {
+		// TODO (vibhaa):
+		// in true WF, subtract amount sent from the total amount to be sent
+		// and send a new amount? but wouldn't you have exhausted all the balance
+		// in this process?
+
+		//routesAndBalances[i].minBalance -= payment.Amount
+		//r.missionControl.destRouteBalances.Store(dest, routesAndBalances)
+	}
+	return preImage, route, err
+
 }
 
 // convertRouteToLnwireVertex takes in a Route and converts it into a slice of lnwire.Vertex such that
@@ -1905,7 +1893,38 @@ func (r *ChannelRouter) convertRouteToVertex(route *Route) []Vertex {
 	return probePath
 }
 
-// initiateProbe initiate a probe to the route specified. This first involves converting the probes'
+// createNewProbesToDest creates new probes to the given destination (dest) along the routes sent
+// in routeChoices. If this destination hasn't been encountered before (if isOldDest is false),
+// it is also responsible for saving the routes to this destination and creating a corresponding
+// entry for the balances along those routes too
+func (r *ChannelRouter) createNewProbesToDest(dest Vertex, routeChoices []*Route, isOldDest bool) {
+	var entryList []RouteInfo
+	for i, curRoute := range routeChoices {
+		r.initiateProbe(curRoute, uint32(i))
+
+		// destination has never been encountered before
+		if isOldDest == false {
+			// add route entry to list of entries
+			entry := RouteInfo{
+				hopList:     r.convertRouteToVertex(curRoute),
+				route:       curRoute,
+				minBalance:  0,
+				lastUpdated: time.Now(),
+				isEmpty:     true,
+			}
+
+			entryList = append(entryList, entry)
+		}
+	}
+
+	// put entry in the destination table if this dest was never encountered before
+	if isOldDest == false {
+		r.missionControl.destRouteBalances.Store(dest, entryList)
+	}
+
+}
+
+// initiateProbe initiates a probe to the route specified. This first involves converting the probes'
 // routes to a format recognized by the probe messages (list of public key addresses of the nodes in
 // the path between sender and the receiver) and then actually sending it on the first hop
 func (r *ChannelRouter) initiateProbe(route *Route, pathID uint32) {
