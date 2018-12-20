@@ -44,6 +44,7 @@ const (
 	// use when sending payments.
 	off          = iota
 	ShortestPath = iota
+	Waterfilling = iota
 )
 
 var (
@@ -353,26 +354,22 @@ func (r *ChannelRouter) updateDestRouteBalances(msg *lnwire.ProbeRouteChannelBal
 		}
 	}
 
-	// create new tuple with timestamp of now
-	routeInfoEntry := RouteInfo{
-		route:       currentRoute,
-		minBalance:  minBal,
-		lastUpdated: time.Now(),
-	}
-
-	// insert into map which has destination to an array of
-	// routeInfo[]: one entry per path among the k paths
+	// find RouteInfoEntry in the table and update it to reflect latest balance
 	var routes []RouteInfo
-	if routes, ok := r.missionControl.destRouteBalances[dest]; ok {
+	if routeInterface, ok := r.missionControl.destRouteBalances.Load(dest); ok {
+		routes = routeInterface.([]RouteInfo)
 		if index := findRouteInRouteSlice(routes, currentRoute); index != -1 {
+			routeInfoEntry := routes[index]
+			routeInfoEntry.minBalance = minBal
+			routeInfoEntry.lastUpdated = time.Now()
 			routes[index] = routeInfoEntry
 		} else {
-			routes = append(routes, routeInfoEntry)
+			log.Errorf("Route not found in routeInfo array")
 		}
 	} else {
-		routes = append(routes, routeInfoEntry)
+		log.Errorf("Probe sent to unknown destination, error")
 	}
-	r.missionControl.destRouteBalances[dest] = routes
+	r.missionControl.destRouteBalances.Store(dest, routes)
 }
 
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
@@ -395,7 +392,7 @@ func (r *ChannelRouter) HandleCompletedProbe(msg *lnwire.ProbeRouteChannelBalanc
 	fmt.Printf("destination is %v\n", dest)
 
 	// if destination has any more outstanding payments send out a new probe
-	if numPayments, ok := r.missionControl.paymentsPerDest[dest]; ok && numPayments > 0 {
+	if numPayments, ok := r.missionControl.paymentsPerDest.Load(dest); ok && numPayments.(int) > 0 {
 		//TODO: sleep for a little while
 		time.Sleep(100 * time.Millisecond)
 
@@ -417,7 +414,7 @@ func (r *ChannelRouter) HandleCompletedProbe(msg *lnwire.ProbeRouteChannelBalanc
 // in a slice of routeInfo structs associated with a given destination
 func findRouteInRouteSlice(routes []RouteInfo, route []Vertex) int {
 	for i := range routes {
-		if reflect.DeepEqual(routes[i].route, route) {
+		if reflect.DeepEqual(routes[i].hopList, route) {
 			return i
 		}
 	}
@@ -1790,10 +1787,199 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 				"route payment to destination: %v",
 				err)
 		}
+
+		// call SendToRoute to actually send the payment
+		return r.SendToRoute([]*Route{route}, payment)
+
+	case Waterfilling:
+		// route payments according to waterfilling.
+		// Assume that payments are tiny and so route each payment on a different single path
+		// based on the balances on the paths right now
+
+		// get the K shortest paths to this destination
+		dest := NewVertex(payment.Target)
+		routeChoices, err := r.getKShortestPaths(dest, payment)
+
+		// check if probes are already in progress to this destination
+		// otherwise initiate a probe per path
+		if cnt, loaded := r.missionControl.paymentsPerDest.LoadOrStore(dest, 0); cnt.(int) == 0 {
+			r.missionControl.paymentsPerDest.Store(dest, cnt.(int)+1)
+
+			var entryList []RouteInfo
+			for i, curRoute := range routeChoices {
+				r.initiateProbe(curRoute, uint32(i))
+
+				// destination has never been encountered before
+				if loaded == false {
+					// add route entry to list of entries
+					entry := RouteInfo{
+						hopList:     r.convertRouteToVertex(route),
+						route:       curRoute,
+						minBalance:  0,
+						lastUpdated: time.Now(),
+						isEmpty:     true,
+					}
+
+					entryList = append(entryList, entry)
+				}
+			}
+
+			// put entry in the destination table if this dest was never encountered before
+			if loaded == false {
+				r.missionControl.destRouteBalances.Store(dest, entryList)
+			}
+
+			// new probes were sent, so wait for them to come back before sending payment
+			time.Sleep(5 * time.Millisecond)
+		}
+
+		// do the waterfilling calculation to figure out where this payment must be sent
+		if routesAndBalances, ok := r.missionControl.destRouteBalances.Load(dest); ok {
+			maxBalance := lnwire.MilliSatoshi(0)
+			maxRouteEntry := RouteInfo{}
+			maxEntryId := 0
+
+			// TODO (vibhaa): needs to be modified to compute exact waterfilling allocation
+			// right now just sending entire payment on the path
+			// with maximum balance
+			for i, entry := range routesAndBalances.([]RouteInfo) {
+				if entry.minBalance > maxBalance {
+					maxBalance = entry.minBalance
+					maxRouteEntry = entry
+					maxEntryId = i
+				}
+			}
+
+			// send on path with the maximum balance
+			// TODO:i send on multiple paths - each in a separate goroutine and keep collecting
+			// the results
+			preImage, route, err := r.SendToRoute([]*Route{maxRouteEntry.route}, payment)
+
+			if err == nil {
+				// TODO (vibhaa):
+				// in true WF, subtract amount sent from the total amount to be sent
+				// and send a new amount? but wouldn't you have exhausted all the balance
+				// in this process?
+
+				//routesAndBalances[i].minBalance -= payment.Amount
+				//r.missionControl.destRouteBalances.Store(dest, routesAndBalances)
+			}
+			return preImage, route, err
+
+		} else {
+			log.Errorf("Probe didn't compelete in time or some error in retreiving probe info")
+			return [32]byte{}, nil, errors.New("Probe information unavailable for destination")
+		}
+
+	}
+	return [32]byte{}, nil, nil
+}
+
+// convertRouteToLnwireVertex takes in a Route and converts it into a slice of lnwire.Vertex such that
+// each entry in order has the public key of all the hops on the path
+func (r *ChannelRouter) convertRouteToLnwireVertex(route *Route) []lnwire.Vertex {
+	senderNode := r.selfNode.PubKeyBytes
+	pathLength := len(route.Hops) + 1 // because sender is ignored in hops
+	probePath := make([]lnwire.Vertex, pathLength)
+	probePath[0] = lnwire.Vertex(senderNode)
+
+	// nextHopMap is actually not populated, so use the hops themselves to construct
+	// the path for the probe
+	for i := 0; i < len(probePath)-1; i++ {
+		nextHop := route.Hops[i].Channel.Node.PubKeyBytes
+		probePath[i+1] = lnwire.Vertex(nextHop)
 	}
 
-	// call SendToRoute to actually send the payment
-	return r.SendToRoute([]*Route{route}, payment)
+	return probePath
+}
+
+// convertRouteToVertex takes in a Route and converts it into a slice of Vertex such that each entry
+// in order has the public key of all the hops on the path
+func (r *ChannelRouter) convertRouteToVertex(route *Route) []Vertex {
+	lnwireVertices := r.convertRouteToLnwireVertex(route)
+	probePath := make([]Vertex, len(lnwireVertices))
+
+	for i, v := range lnwireVertices {
+		probePath[i] = Vertex(v)
+	}
+	return probePath
+}
+
+// initiateProbe initiate a probe to the route specified. This first involves converting the probes'
+// routes to a format recognized by the probe messages (list of public key addresses of the nodes in
+// the path between sender and the receiver) and then actually sending it on the first hop
+func (r *ChannelRouter) initiateProbe(route *Route, pathID uint32) {
+	// Craft a probe packet to send out along this route
+	senderNode := r.selfNode.PubKeyBytes
+	probePath := r.convertRouteToLnwireVertex(route)
+	pathLength := len(probePath)
+
+	// fill in the fields for the probe message
+	probeMsg := &lnwire.ProbeRouteChannelBalances{
+		Route:                 probePath,
+		HopNum:                0,
+		RouterChannelBalances: make([]lnwire.MilliSatoshi, pathLength),
+		Sender:                lnwire.Vertex(senderNode),
+		ProbeCompleted:        0,
+		CurrentNode:           lnwire.Vertex(senderNode),
+		PathID:                pathID,
+	}
+	log.Debugf("Probe message constructed in SendToRoute:%v\n", probeMsg)
+
+	// send the probe to the first hop which will propagate it onwards
+	r.cfg.SendProbeToFirstHop(probeMsg)
+}
+
+// getKShortestPaths either constructs the route for KShortestPaths
+// in the necessary format if this destination
+// is being attempted for the first time or retrieves the relevant data from
+// the table of per destination routes
+func (r *ChannelRouter) getKShortestPaths(dest Vertex, payment *LightningPayment) ([]*Route, error) {
+	// if the destination has been encountered and the shortest paths
+	// computed, then reuse them
+	if routeEntries, ok := r.missionControl.destRouteBalances.Load(dest); ok {
+		var routes []*Route
+		for _, entry := range routeEntries.([]RouteInfo) {
+			routes = append(routes, entry.route)
+		}
+		return routes, nil
+		// need to redo my data structure/figure that out
+	}
+
+	// create a dummy paymentSession to find shortest path
+	dummyPaySession, err := r.missionControl.NewPaymentSession(
+		payment.RouteHints, payment.Target,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// calculate CLTV delta
+	var finalCLTVDelta uint16
+	if payment.FinalCLTVDelta == nil {
+		finalCLTVDelta = DefaultFinalCLTVDelta
+	} else {
+		finalCLTVDelta = *payment.FinalCLTVDelta
+	}
+
+	// fetch the current block height
+	_, currentHeight, err := r.cfg.Chain.GetBestBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	// get K shortest routes to the destination
+	routes, err := dummyPaySession.RequestKShortestPaths(
+		payment, uint32(currentHeight), finalCLTVDelta,
+	)
+	if err != nil {
+		// If we're unable to find a route, return error
+		return nil, fmt.Errorf("unable to "+
+			"route payment to destination: %v",
+			err)
+	}
+
+	return routes, nil
 }
 
 // sendPayment attempts to send a payment as described within the passed

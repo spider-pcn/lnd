@@ -36,6 +36,10 @@ type ProbeRouteChannelBalances struct {
 	// CurrentNode denotes the current Node in the path that the probe is traversing
 	// CurrentNode = Route[HopNum]
 	CurrentNode Vertex
+
+	// PathID denotes the path identifier as per the k-shortest paths - 0 denotes
+	// the shortest path
+	PathID uint32
 }
 
 // NewProbeRouteChannelBalances creates a new empty ProbeRouteChannelBalances message

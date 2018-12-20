@@ -72,18 +72,20 @@ type missionControl struct {
 	// to a set of routes to that destination and the minimum balance on the routes
 	// Every destination maps to a set of tuples - each tuple has a route, the minimum
 	// balance on that route and the timestamp of when that route was updated
-	destRouteBalances map[Vertex][]RouteInfo
+	destRouteBalances sync.Map
 
 	// paymentsPerDest keeps track of the number of outstanding payments to every destination
 	// This helps control the probes in flight and ends them when there ar eno further outstanding
 	// payments
-	paymentsPerDest map[Vertex]uint32
+	paymentsPerDest sync.Map
 }
 
 type RouteInfo struct {
-	route       []Vertex
+	hopList     []Vertex
+	route       *Route
 	minBalance  lnwire.MilliSatoshi
 	lastUpdated time.Time
+	isEmpty     bool
 }
 
 // newMissionControl returns a new instance of missionControl.
