@@ -13,7 +13,7 @@ var LOG_FIREBASE bool = true
 // multiply MAX_HTLC count by this to get max overflowQueue length
 var SPIDER_QUEUE_LENGTH_SCALE int = 8
 var FILENAME string = "./log_test.txt"
-var EXP_NAME string = "DEBUG"
+var EXP_NAME string = "HOTNETS-MAC"
 var SWITCH_NAME string = "DEFAULT"
 var UPDATE_INTERVAL int = 10
 
@@ -39,11 +39,7 @@ func debug_print(str string) {
 	}
 }
 
-func get_switch_name() string {
-	return SWITCH_NAME;
-}
-
-func set_switch_name(name string) {
-	fmt.Println("set switch name!: " + name)
-	SWITCH_NAME = name;
+func set_exp_name(name string) {
+	fmt.Println("set exp name!: " + name)
+	EXP_NAME = name
 }

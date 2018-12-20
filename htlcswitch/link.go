@@ -351,6 +351,7 @@ func NewChannelLink(cfg ChannelLinkConfig,
 
 func (l *channelLink) updateFirebase()  {
 	switchKey := l.cfg.Switch.getSwitchKey()
+	i := 0
 	for {
 		// going to store queue information, for this particular channel.
 		vals := make(map[string] map[string] string)
@@ -359,18 +360,19 @@ func (l *channelLink) updateFirebase()  {
 		chanID := fmt.Sprintf("%v", l.ShortChanID())
 
 		qlen := fmt.Sprintf("%d", l.overflowQueue.Length())
-		totalAmt := fmt.Sprintf("%v", l.overflowQueue.TotalHtlcAmount().ToSatoshis())
+		totalAmt := fmt.Sprintf("%v", l.overflowQueue.TotalHtlcAmount())
 		snapshot := l.channel.StateSnapshot()
-		sent := fmt.Sprintf("%v", snapshot.TotalMSatSent.ToSatoshis())
-		rcvd := fmt.Sprintf("%v", snapshot.TotalMSatReceived.ToSatoshis())
+		sent := fmt.Sprintf("%v", snapshot.TotalMSatSent)
+		rcvd := fmt.Sprintf("%v", snapshot.TotalMSatReceived)
 		capacity := fmt.Sprintf("%v", snapshot.Capacity)
 		chainHash := fmt.Sprintf("%v", snapshot.ChainHash)
-		locBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.LocalBalance.ToSatoshis())
-		remBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.RemoteBalance.ToSatoshis())
+		locBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.LocalBalance)
+		remBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.RemoteBalance)
 		commitHt := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitHeight)
 		commitFee := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitFee)
-		bandwidth := fmt.Sprintf("%v", l.Bandwidth().ToSatoshis())
+		bandwidth := fmt.Sprintf("%v", l.Bandwidth())
 		curVals := make(map[string] string)
+		curVals["idx"] = fmt.Sprintf("%d", i)
 		curVals["qlen"] = qlen
 		curVals["qTotalAmt"] = totalAmt
 		curVals["sent"] = sent
@@ -387,6 +389,7 @@ func (l *channelLink) updateFirebase()  {
 		if _, err := fb.Push(vals); err != nil {
 			fmt.Println("error when logging to firebase")
 		}
+		i += 1;
 		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
 	}
 }
