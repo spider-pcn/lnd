@@ -13,9 +13,9 @@ var LOG_FIREBASE bool = true
 // multiply MAX_HTLC count by this to get max overflowQueue length
 var SPIDER_QUEUE_LENGTH_SCALE int = 8
 var FILENAME string = "./log_test.txt"
-var EXP_NAME string = "HOTNETS-MAC"
+var EXP_NAME string = "HOTNETS-DISTR-TEST"
 var SWITCH_NAME string = "DEFAULT"
-var UPDATE_INTERVAL int = 10
+var UPDATE_INTERVAL int = 100
 
 func hash(s string) uint32 {
         h := fnv.New32a()
