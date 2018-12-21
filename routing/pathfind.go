@@ -587,10 +587,8 @@ func findSpiderShortestPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
 		// route if fromNode is selected. If fromNode is the source
 		// node, no additional timelock is required.
 		var fee lnwire.MilliSatoshi
-		var timeLockDelta uint16
 		if fromVertex != sourceVertex {
 			fee = computeFee(amountToSend, edge)
-			timeLockDelta = edge.TimeLockDelta
 		}
 
 		// amountToReceive is the amount that the node that is added to
@@ -600,11 +598,9 @@ func findSpiderShortestPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
 		// charges.
 		amountToReceive := amountToSend + fee
 
-		// By adding fromNode in the route, there will be an extra
-		// weight composed of the fee that this node will charge and
-		// the amount that will be locked for timeLockDelta blocks in
-		// the HTLC that is handed out to fromNode.
-		weight := edgeWeight(amountToReceive, fee, timeLockDelta)
+		// for pure distance based computation of shortest paths
+		// all edges have the same weight
+		weight := int64(1)
 
 		// Compute the tentative distance to this new channel/edge
 		// which is the distance from our toNode to the target node
