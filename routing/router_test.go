@@ -974,7 +974,7 @@ func TestSendSpiderShortestPathSucceed(t *testing.T) {
 			preImage[:], paymentPreImage[:])
 	}
 
-	// The route should have satoshi as the first hop.
+	// The route should have luoji as the first hop.
 	if route.Hops[0].Channel.Node.Alias != "luoji" {
 		t.Fatalf("route should go through luoji as first hop, "+
 			"instead passes through: %v",
@@ -1045,6 +1045,132 @@ func TestSendSpiderShortestPathFail(t *testing.T) {
 			t.Fatalf("payment should have failed due to forwarding error, but got %v", err)
 		}
 	}
+}
+
+// TestSendSpiderWaterfillingSucceed checks that the function picks the k shortest paths and sends
+// the payment in whole on the path with the maximum bottleneck balance
+// This is tested via two payments, the first which has both paths as choices and depletes one of them
+// forcing the second to go through the remaining one path
+func TestSendSpiderWaterfillingSucceed(t *testing.T) {
+	t.Parallel()
+
+	const startingBlockHeight = 101
+	// load test topology from routing/testdata/basic_graph.json
+	ctx, cleanUp, err := createTestCtxFromFile(startingBlockHeight, basicGraphFilePath)
+	defer cleanUp()
+	if err != nil {
+		t.Fatalf("unable to create router: %v", err)
+	}
+
+	// Craft a LightningPayment struct that'll send a payment from roasbeef to
+	// to satoshi for 6 satoshis
+	var payHash [32]byte
+	paymentAmt := lnwire.NewMSatFromSatoshis(6)
+	payment := LightningPayment{
+		Target:      ctx.aliases["satoshi"],
+		Amount:      paymentAmt,
+		FeeLimit:    noFeeLimit,
+		PaymentHash: payHash,
+	}
+
+	var preImage [32]byte
+	copy(preImage[:], bytes.Repeat([]byte{9}, 32))
+
+	// We'll modify the SendToSwitch to return the preimage that we generated above
+	ctx.router.cfg.SendToSwitch = func(firstHop lnwire.ShortChannelID,
+		_ *lnwire.UpdateAddHTLC, _ *sphinx.Circuit) ([32]byte, error) {
+
+		return preImage, nil
+	}
+
+	// We'll modify the probe to directly jump to handling of the completed probe filling in
+	// random values for the returned balances
+	ctx.router.cfg.SendProbeToFirstHop = func(msg *lnwire.ProbeRouteChannelBalances) {
+
+		// reverse the route when returning the message
+		for i := len(msg.Route)/2 - 1; i >= 0; i-- {
+			opp := len(msg.Route) - 1 - i
+			msg.Route[i], msg.Route[opp] = msg.Route[opp], msg.Route[i]
+		}
+
+		// fill some random balance information such that the path with
+		// largest pathID or kth shortest path will have max bottleneck balance
+		// and so should be chosen
+		for i := 0; i < len(msg.Route)-1; i++ {
+			msg.RouterChannelBalances[i] = lnwire.MilliSatoshi(i*1000 + 5000*int(msg.PathID) + 2000)
+		}
+
+		ctx.router.HandleCompletedProbe(msg, false)
+	}
+
+	// Send off the payment request to the router. Two hop via luo ji should have
+	// been selected, and the payment should succeed.
+	paymentPreImage, route, err := ctx.router.SendSpider(&payment, Waterfilling)
+	if err != nil {
+		t.Fatalf("unable to send payment: %v", err)
+	} else {
+	}
+
+	// The route selected should have two hops because that's the one with maximum balance
+	if len(route.Hops) != 2 {
+		t.Fatalf("incorrect route length: expected %v got %v", 2,
+			len(route.Hops))
+	}
+
+	// The preimage should match up with the once created above.
+	if !bytes.Equal(paymentPreImage[:], preImage[:]) {
+		t.Fatalf("incorrect preimage used: expected %x got %x",
+			preImage[:], paymentPreImage[:])
+	}
+
+	// The route should have luoji as the first hop.
+	if route.Hops[0].Channel.Node.Alias != "luoji" {
+		t.Fatalf("route should go through luoji as first hop, "+
+			"instead passes through: %v",
+			route.Hops[0].Channel.Node.Alias)
+	}
+
+	// Craft a second LightningPayment struct that'll send a payment from roasbeef to
+	// to satoshi for 2 satoshis
+	// The idea is that the first payment depleted the second shortest route, so now
+	// the shortest route should be chosen by waterfilling
+	secondPaymentAmt := lnwire.NewMSatFromSatoshis(2)
+	secondPayment := LightningPayment{
+		Target:      ctx.aliases["satoshi"],
+		Amount:      secondPaymentAmt,
+		FeeLimit:    noFeeLimit,
+		PaymentHash: payHash,
+	}
+
+	// Send off the payment request to the router. Direct to Satoshi should have
+	// been selected, and the payment should succeed.
+	paymentPreImage, route, err = ctx.router.SendSpider(&secondPayment, Waterfilling)
+	if err != nil {
+		t.Fatalf("unable to send payment: %v", err)
+	} else {
+	}
+
+	// The route selected should have two hops because that's the one with maximum balance
+	// because the first payment depleted the first route to make it have less balance
+	// than the direct
+	if len(route.Hops) != 1 {
+		t.Fatalf("incorrect route length: expected %v got %v", 1,
+			len(route.Hops))
+	}
+
+	// The preimage should match up with the once created above.
+	if !bytes.Equal(paymentPreImage[:], preImage[:]) {
+		t.Fatalf("incorrect preimage used: expected %x got %x",
+			preImage[:], paymentPreImage[:])
+	}
+
+	// The route should have satoshi as the first hop.
+	if route.Hops[0].Channel.Node.Alias != "satoshi" {
+		t.Fatalf("route should go through luoji as first hop, "+
+			"instead passes through: %v",
+			route.Hops[0].Channel.Node.Alias)
+	}
+
 }
 
 // TestAddProof checks that we can update the channel proof after channel
