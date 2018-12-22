@@ -383,7 +383,7 @@ func (p *paymentSession) RequestShortestPath(payment *LightningPayment,
 // to pathfind.go -> findSpiderKShortestPaths
 func (p *paymentSession) RequestKShortestPaths(payment *LightningPayment,
 	height uint32, finalCltvDelta uint16) ([]*Route, error) {
-	K := uint8(1)
+	K := uint8(4)
 
 	paths, err := findSpiderKShortestPaths(nil, p.mc.graph, p.additionalEdges,
 		p.mc.selfNode, payment.Target, payment.Amount, K)
@@ -412,7 +412,7 @@ func (p *paymentSession) RequestKShortestPaths(payment *LightningPayment,
 		routes = append(routes, route)
 	}
 
-	return routes, err
+	return routes, nil
 }
 
 // RequestRoute returns a route which is likely to be capable for successfully

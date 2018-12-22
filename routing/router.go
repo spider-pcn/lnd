@@ -343,16 +343,19 @@ func New(cfg Config) (*ChannelRouter, error) {
 // path that was just queried and updates the time at which this probe was completed.
 func (r *ChannelRouter) updateDestRouteBalances(msg *lnwire.ProbeRouteChannelBalances, currentRoute []Vertex) {
 	dest := currentRoute[len(currentRoute)-1]
-	fmt.Printf("destination is %v\n", dest)
 
 	// compute minimum balance on route
 	var minBal lnwire.MilliSatoshi
 	minBal = math.MaxUint64
-	for _, bal := range msg.RouterChannelBalances {
-		if bal <= minBal {
+	log.Debugf("finding minimum among")
+	for i, bal := range msg.RouterChannelBalances {
+		log.Debugf("%v, ", bal)
+		// ignore the last entry because number of channels = number of routers - 1
+		if bal <= minBal && i < len(msg.RouterChannelBalances)-1 {
 			minBal = bal
 		}
 	}
+	log.Debugf("\nmin bal is %v\n", minBal)
 
 	// find RouteInfoEntry in the table and update it to reflect latest balance
 	var routes []RouteInfo
@@ -363,19 +366,19 @@ func (r *ChannelRouter) updateDestRouteBalances(msg *lnwire.ProbeRouteChannelBal
 			routeInfoEntry.minBalance = minBal
 			routeInfoEntry.lastUpdated = time.Now()
 			routes[index] = routeInfoEntry
+			r.missionControl.destRouteBalances.Store(dest, routes)
 		} else {
 			log.Errorf("Route not found in routeInfo array")
 		}
 	} else {
 		log.Errorf("Probe sent to unknown destination, error")
 	}
-	r.missionControl.destRouteBalances.Store(dest, routes)
 }
 
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
 // destination information. The information added corresponds to the minimum balance on the
 // path that was just queried and updates the time at which this probe was completed.
-func (r *ChannelRouter) HandleCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
+func (r *ChannelRouter) HandleCompletedProbe(msg *lnwire.ProbeRouteChannelBalances, sendNewProbe bool) {
 	// reverse the route because probe comes back reversed
 	// create a new array of type Vertex also to avoid casts from lnwire.Vertex to Vertex
 	// and vice versa
@@ -385,11 +388,14 @@ func (r *ChannelRouter) HandleCompletedProbe(msg *lnwire.ProbeRouteChannelBalanc
 		reversedRoute[i], reversedRoute[opp] = Vertex(msg.Route[opp]), Vertex(msg.Route[i])
 		msg.Route[i], msg.Route[opp] = msg.Route[opp], msg.Route[i]
 	}
+	if len(reversedRoute)%2 == 1 {
+		reversedRoute[len(reversedRoute)/2] = Vertex(msg.Route[len(reversedRoute)/2])
+	}
+
 	// update state in the per destination table
 	r.updateDestRouteBalances(msg, reversedRoute)
 
 	dest := reversedRoute[len(reversedRoute)-1]
-	fmt.Printf("destination is %v\n", dest)
 
 	// if destination has any more outstanding payments send out a new probe
 	if numPayments, ok := r.missionControl.paymentsPerDest.Load(dest); ok && numPayments.(int) > 0 {
@@ -406,14 +412,18 @@ func (r *ChannelRouter) HandleCompletedProbe(msg *lnwire.ProbeRouteChannelBalanc
 		}
 
 		// send the probe to the first hop which will propagate it onwards
-		r.cfg.SendProbeToFirstHop(msg)
+		if sendNewProbe {
+			r.cfg.SendProbeToFirstHop(msg)
+		}
 	}
 }
 
 // findRouteInRouteSlice is a helper function that finds the struct associated with a particular route
 // in a slice of routeInfo structs associated with a given destination
 func findRouteInRouteSlice(routes []RouteInfo, route []Vertex) int {
+	log.Debugf("Searching for %v\n", route)
 	for i := range routes {
+		log.Debugf("comparing %v\n", routes[i].hopList)
 		if reflect.DeepEqual(routes[i].hopList, route) {
 			return i
 		}
@@ -1804,15 +1814,36 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			return [32]byte{}, nil, nil
 		}
 
-		// check if probes are already in progress to this destination
-		// otherwise initiate a probe per path
-		if cnt, isOldDest := r.missionControl.paymentsPerDest.LoadOrStore(dest, 0); cnt.(int) == 0 {
+		// check if information from probes on all routes to this destination already exists and
+		// is relatively recent
+		probeNeeded := true
+		if destProbeInfo, ok := r.missionControl.destRouteBalances.Load(dest); ok {
+			probeNeeded = false
+			for _, routes := range destProbeInfo.([]RouteInfo) {
+				if time.Now().Sub(routes.lastUpdated) > time.Second {
+					probeNeeded = true
+				}
+			}
+		}
+
+		// check if probes are currently in progress to this destination
+		// otherwise initiate a probe per path (if info isn't recent from above also)
+		cnt, isOldDest := r.missionControl.paymentsPerDest.LoadOrStore(dest, 0)
+		if cnt.(int) == 0 && probeNeeded {
 			r.missionControl.paymentsPerDest.Store(dest, cnt.(int)+1)
 			r.createNewProbesToDest(dest, routeChoices, isOldDest)
-
 			// new probes were sent, so wait for them to come back before sending payment
 			time.Sleep(5 * time.Millisecond)
+		} else {
+			r.missionControl.paymentsPerDest.Store(dest, cnt.(int)+1)
+			log.Debugf("number of outstanding payments to this destination are %d\n", cnt.(int))
 		}
+
+		// decrement payments per destination after it is done
+		defer func() {
+			cnt, _ := r.missionControl.paymentsPerDest.Load(dest)
+			r.missionControl.paymentsPerDest.Store(dest, cnt.(int)-1)
+		}()
 
 		// do the waterfilling calculation to figure out where this payment must be sent
 		if routesAndBalances, ok := r.missionControl.destRouteBalances.Load(dest); ok {
@@ -1852,6 +1883,7 @@ func (r *ChannelRouter) sendPaymentAsPerWaterfilling(routesAndBalances []RouteIn
 	// send on path with the maximum balance
 	// TODO:i send on multiple paths - each in a separate goroutine and keep collecting
 	// the results
+	log.Debugf("Selected WF route is %vi\n", maxRouteEntry.route)
 	preImage, route, err := r.SendToRoute([]*Route{maxRouteEntry.route}, payment)
 
 	if err == nil {
@@ -1859,7 +1891,6 @@ func (r *ChannelRouter) sendPaymentAsPerWaterfilling(routesAndBalances []RouteIn
 		// in true WF, subtract amount sent from the total amount to be sent
 		// and send a new amount? but wouldn't you have exhausted all the balance
 		// in this process?
-
 		routesAndBalances[maxEntryId].minBalance -= payment.Amount
 		//r.missionControl.destRouteBalances.Store(dest, routesAndBalances)
 	}
@@ -1903,9 +1934,7 @@ func (r *ChannelRouter) convertRouteToVertex(route *Route) []Vertex {
 // entry for the balances along those routes too
 func (r *ChannelRouter) createNewProbesToDest(dest Vertex, routeChoices []*Route, isOldDest bool) {
 	var entryList []RouteInfo
-	for i, curRoute := range routeChoices {
-		r.initiateProbe(curRoute, uint32(i))
-
+	for _, curRoute := range routeChoices {
 		// destination has never been encountered before
 		if isOldDest == false {
 			// add route entry to list of entries
@@ -1924,6 +1953,13 @@ func (r *ChannelRouter) createNewProbesToDest(dest Vertex, routeChoices []*Route
 	// put entry in the destination table if this dest was never encountered before
 	if isOldDest == false {
 		r.missionControl.destRouteBalances.Store(dest, entryList)
+		log.Debugf("inserting for key %v the following entries to destRouteBalances: %v\n", dest,
+			entryList)
+	}
+
+	// now that all entries have been initialized, start probes
+	for i, curRoute := range routeChoices {
+		r.initiateProbe(curRoute, uint32(i))
 	}
 
 }
@@ -1947,7 +1983,6 @@ func (r *ChannelRouter) initiateProbe(route *Route, pathID uint32) {
 		CurrentNode:           lnwire.Vertex(senderNode),
 		PathID:                pathID,
 	}
-	log.Debugf("Probe message constructed in SendToRoute:%v\n", probeMsg)
 
 	// send the probe to the first hop which will propagate it onwards
 	r.cfg.SendProbeToFirstHop(probeMsg)

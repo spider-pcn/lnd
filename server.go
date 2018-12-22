@@ -1016,7 +1016,7 @@ func (s *server) respondToProbe(msg *lnwire.ProbeRouteChannelBalances) {
 		} else {
 			// update the table with minimum balance for the path
 			// and send out a new probe is payment hasn't completed
-			s.chanRouter.HandleCompletedProbe(msg)
+			s.chanRouter.HandleCompletedProbe(msg, true)
 			srvrLog.Infof("finished probe")
 
 		}
