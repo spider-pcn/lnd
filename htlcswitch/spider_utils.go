@@ -7,14 +7,16 @@ import (
 )
 
 // FIXME: temporary until we can use the global flags
-var SPIDER_FLAG bool = true
+var SPIDER_FLAG bool = os.Getenv("SPIDER_QUEUE") == "1"
+
 var DEBUG_FLAG bool = true
-var LOG_FIREBASE bool = true
+var LOG_FIREBASE bool = os.Getenv("SPIDER_LOG_FIREBASE") == "1"
+
 // multiply MAX_HTLC count by this to get max overflowQueue length
 var SPIDER_QUEUE_LENGTH_SCALE int = 8
 var FILENAME string = "./log_test.txt"
-var EXP_NAME string = "HOTNETS-DISTR-TEST"
-var SWITCH_NAME string = "DEFAULT"
+var EXP_NAME string = os.Getenv("SPIDER_EXP_NAME")
+// time in ms
 var UPDATE_INTERVAL int = 100
 
 func hash(s string) uint32 {

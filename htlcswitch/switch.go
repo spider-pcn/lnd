@@ -21,6 +21,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/ticker"
+	"os"
 )
 
 const (
@@ -357,6 +358,11 @@ func (s *Switch) getSwitchKey() string {
 	// not seem to change.
 	// Note: %v just prints out the structs field values etc unless a specific
 	// representation is specified.
+	nodeName := os.Getenv("NODENAME")
+	fmt.Println("nodeName: " + nodeName);
+	if (nodeName != "") {
+		return nodeName;
+	}
 	switchKey := fmt.Sprintf("%v", s.cfg)
 	// randomly truncate.
 	switchKey = switchKey[0:100]
