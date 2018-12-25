@@ -10,9 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
-	"sync"
 
 	"sync/atomic"
 
@@ -3645,9 +3645,13 @@ func testMultiHopPayments(net *lntest.NetworkHarness, t *harnessTest) {
 	closeChannelAndAssert(ctxt, t, net, carol, chanPointCarol, false)
 }
 
+// testSpiderShortestPath benchmarks the performance of the shortest-path routing
+// algorithm of Spider. It sets up nodes and payment demands according to the
+// HotNets paper, and starts sending payments on each node. It counts how
+// many payments have succeeded and report the success ratio.
 func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	ctxb := context.Background()
-	
+
 	// Set channel capacity
 	// chanAmt: the total amount of money that we put into the channel
 	// pushAmt: the money that we push to the remote end
@@ -3658,38 +3662,40 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 
 	// Set transaction fees
 	// We want the fee to be absolutely zero.
-	// Note that vanilla LND does now allow zero fee. Modification has been done.
+	// Note that vanilla LND does now allow zero fee. Modification has been done to LND
+	// to remove this limit.
 	baseFee := int64(0)
-	feeRate := 0	
+	feeRate := 0
+
 	// Set RPC call timeout
-	// It will be used when we make RPC calls. 
+	// It will be used when we make RPC calls.
 	timeout := time.Duration(time.Second * 15)
 
 	// Define the topology
-	numNodes := 5									// number of nodes in the network
-	nodes := make([]*lntest.HarnessNode, numNodes)	// create a list for nodes
-	nodeNames := []string{"1", "2", "3", "4", "5"}	// name of the nodes
+	numNodes := 5                                  // number of nodes in the network
+	nodes := make([]*lntest.HarnessNode, numNodes) // create a list for nodes
+	nodeNames := []string{"1", "2", "3", "4", "5"} // name of the nodes
 	nodeDelays := []int{100, 200, 50, 50, 50}
 
-	numChannels := 6								// number of channels in the network
+	numChannels := 6 // number of channels in the network
 	// define the channels by specifying both ends (as index of node)
 	connections := [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 0}, {1, 3}}
 
 	// Define the payment demand
-	numPayIntents := 8								// number of payment demands
+	numPayIntents := 8 // number of payment demands
 	// define the payment demands by specifying the sender and receiver (as index of node)
 	payIntents := [][]int{{0, 1}, {0, 4}, {1, 3}, {2, 1}, {2, 4}, {3, 0}, {3, 2}, {4, 2}}
 	// define the rate (number of tx per unit time) of payment demands
 	payRates := []int{1, 1, 2, 1, 2, 2, 2, 1}
 
 	// Configure simulation parameters
-	const baseRate = 5		// num of payments per second for payment demands w/ payRate=1
-	const paymentAmt = 5000	// size of each transaction
-	const testTime = 60		// duration of the simulation
+	const baseRate = 5      // num of payments per second for payment demands w/ payRate=1
+	const paymentAmt = 5000 // size of each transaction
+	const testTime = 60     // duration of the simulation
 
 	// Construct the nodes
 	for i := 0; i < numNodes; i++ {
-		nd, err := net.NewNode(nodeNames[i], nil, nodeDelays[i])
+		nd, err := net.NewNodeWithDelay(nodeNames[i], nil, nodeDelays[i])
 		nodes[i] = nd
 		if err != nil {
 			t.Fatalf("unable to create new node: %v", err)
@@ -3726,7 +3732,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		chanPoints[i] = openChannelAndAssert(
 			ctxt, t, net, nodes[conn[0]], nodes[conn[1]],
 			lntest.OpenChannelParams{
-				Amt: chanAmt,
+				Amt:     chanAmt,
 				PushAmt: pushAmt,
 				MinHtlc: 0,
 			},
@@ -3758,14 +3764,14 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 			for _, id := range chanIDs {
 				if chid == id {
 					found = true
-				} 
+				}
 			}
 			if found == false {
 				chanIDs[i] = chid
 			}
 		}
 	}
-	
+
 	// Wait for all nodes to have seen all channels.
 	for _, chanPoint := range chanPoints {
 		for i, node := range nodes {
@@ -3797,12 +3803,12 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	for i := 0; i < numChannels; i++ {
 		if err := nodes[connections[i][0]].WaitForNetworkChannelOpen(ctxt, chanPoints[i]); err != nil {
 			t.Fatalf("%v didn't see the %v->%v channel before "+
-				"timeout: %v", nodeNames[connections[i][0]], 
+				"timeout: %v", nodeNames[connections[i][0]],
 				nodeNames[connections[i][0]], nodeNames[connections[i][1]], err)
 		}
 		if err := nodes[connections[i][1]].WaitForNetworkChannelOpen(ctxt, chanPoints[i]); err != nil {
 			t.Fatalf("%v didn't see the %v->%v channel before "+
-				"timeout: %v", nodeNames[connections[i][1]], 
+				"timeout: %v", nodeNames[connections[i][1]],
 				nodeNames[connections[i][1]], nodeNames[connections[i][0]], err)
 		}
 	}
@@ -3810,17 +3816,18 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	// Update channel policy to eliminate fees, then wait for everyone to see the update.
 	// I was not able to find a way to specify fees during channel creation, so I have to
 	// manually set it after the channel has been created.
-	timeLockDelta := uint32(144)	// HTLC timelock delta. This value is the default value.
+	timeLockDelta := uint32(144) // HTLC timelock delta. This value is the default value.
 
 	// Expected channel forwarding policy that we will match against.
 	expectedPolicy := &lnrpc.RoutingPolicy{
 		FeeBaseMsat:      baseFee,
 		FeeRateMilliMsat: int64(feeRate * testFeeBase),
 		TimeLockDelta:    timeLockDelta,
-		MinHtlc:          0, 		// We set it to zero during channel creation.
+		MinHtlc:          0, // We set it to zero during channel creation.
 	}
 
-	// Each node will subscribe to graph change event.
+	// Each node will subscribe to graph change event. For each node we subscribe it to
+	// the graph update notifications and register this subscription "handler" in graphSubs.
 	graphSubs := make([]graphSubscription, numNodes)
 	for i := 0; i < numNodes; i++ {
 		ctxt, _ := context.WithTimeout(ctxb, timeout)
@@ -3829,16 +3836,18 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	}
 
 	// For each channel, both ends will see an chanUpdate message. So we end up with numChannels * 2.
-	expectedMessages := make([]expectedChanUpdate, numChannels * 2)
+	// We will make sure that each node receives that number of update messages, and each message
+	// has the content specified below.
+	expectedMessages := make([]expectedChanUpdate, numChannels*2)
 	for i := 0; i < numChannels; i++ {
-		expectedMessages[i * 2] = expectedChanUpdate{
+		expectedMessages[i*2] = expectedChanUpdate{
 			nodes[connections[i][0]].PubKeyStr, expectedPolicy, chanPoints[i]}
-		expectedMessages[i * 2 + 1] = expectedChanUpdate{
-			nodes[connections[i][1]].PubKeyStr, expectedPolicy, chanPoints[i]}	
-	} 
+		expectedMessages[i*2+1] = expectedChanUpdate{
+			nodes[connections[i][1]].PubKeyStr, expectedPolicy, chanPoints[i]}
+	}
 
-	// Actually update the channel policy here. We need to do this for every node, since each
-	// node manages its own forwarding policy (fees, etc.)
+	// Actually update the channel policy here. We need to do this for every node instead for
+	// each channel, since each node manages its own forwarding policy (fees, etc.)
 	for i := 0; i < numChannels; i++ {
 		ctxt, _ = context.WithTimeout(ctxb, timeout)
 		updateFeeReq := &lnrpc.PolicyUpdateRequest{
@@ -3857,7 +3866,12 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		}
 	}
 
-	// Wait for everyone to receive the channel update.
+	// Wait for everyone to receive all the expected channel update messages. This can sometimes
+	// fail in the test. If it fails, running the test again fixes the problem. TODO: It is possibly
+	// due to a race condition - before the graph update subscription has completed, we have already
+	// updated the channel, so some nodes do not hear those updates. Checking whether the subscription
+	// has been established before updating channel policy should fix the problem, but I can't seem
+	// to find the relevant APIs (although I believe there are).
 	for i := 0; i < numNodes; i++ {
 		waitForChannelUpdate(t, graphSubs[i], expectedMessages)
 	}
@@ -3866,6 +3880,9 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	prand.Seed(time.Now().UnixNano())
 
 	// Initialize waitgroups. We will wait for every payment goroutine to finish before exiting
+	// Specifically, 'wg' waits for paymentDispatcher goroutines, making sure that no payments
+	// are being generated when we try to finish this test. tranwg handles paymentTimeoutWrapper
+	// goroutines, making sure that no outstanding payments are there when we try to finish.
 	var wg sync.WaitGroup
 	var tranwg sync.WaitGroup
 	wg.Add(numPayIntents)
@@ -3883,6 +3900,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		tried := make([]uint64, numPayIntents)
 		var totSucceeded uint64 = 0
 		var totTried uint64 = 0
+		// aggregate per-intent pair success rates
 		for i := 0; i < numPayIntents; i++ {
 			succeeded[i] = atomic.LoadUint64(&atomicSucceeded[i])
 			tried[i] = atomic.LoadUint64(&atomicTried[i])
@@ -3891,7 +3909,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 		}
 		mux.Lock()
 		fmt.Printf("%v transactions performed in total, %v succeeded\n", totTried, totSucceeded)
-		fmt.Printf("Rate: %.2f%%\n", 100.0 * float64(totSucceeded) / float64(totTried))
+		fmt.Printf("Rate: %.2f%%\n", 100.0*float64(totSucceeded)/float64(totTried))
 		for i := 0; i < numPayIntents; i++ {
 			rt := 100.0 * float64(succeeded[i]) / float64(tried[i])
 			fmt.Printf("%v -> %v: %.2f%%\t(%v/%v)\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]], rt,
@@ -3909,7 +3927,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 				return start, end
 			}
 		}
-		return "U", "U"	// U for unknown
+		return "U", "U" // U for unknown
 	}
 
 	// Helper function to dump channel info
@@ -3959,18 +3977,22 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 	// Channels to control payment goroutines.
 	var paymentTick = make([]chan int, numPayIntents)
 	for i := range paymentTick {
-   		paymentTick[i] = make(chan int, 1)
+		paymentTick[i] = make(chan int, 1)
 	}
 
 	// Channels to signal the end of the experiment
 	var paymentStop = make([]chan int, numPayIntents)
 	for i := range paymentTick {
-   		paymentStop[i] = make(chan int, 1)
+		paymentStop[i] = make(chan int, 1)
 	}
-	
+
 	// Dispatcher goroutines
 	for i := 0; i < numPayIntents; i++ {
-		go func(i int) {
+		// paymentDispatcher controls when to send a new payment of a certain demand,
+		// by constantly checking the paymentTick channel. Once the channel is non-empty,
+		// it fires a paymentTimeoutWrapper goroutine to actually send a payment. Or, if
+		// the paymentStop channel is non-empty, it returns (times out).
+		paymentDispatcher := func(i int) {
 			defer wg.Done()
 			for {
 				// We either timeout, or wait for the next tick.
@@ -3978,8 +4000,9 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 				case <-paymentStop[i]:
 					return
 				case <-paymentTick[i]:
-					// We create a goroutine for every single payment, and track the status of the payment here
-					go func(i int) {
+					// paymentTimeoutWrapper is a simple wrapper over paymentCreator, which
+					// adds local timeout to the payment.
+					paymentTimeoutWrapper := func(i int) {
 						// The payment will timeout after 20 seconds.
 						timeout := time.After(time.Duration(20) * time.Second)
 						// One more goroutine to wait for
@@ -3990,7 +4013,11 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 						// in the current goroutine we simply wait for either timeout or the sub-goroutine to
 						// finish. Whichever comes first, we will return.
 						sendok := make(chan int, 1)
-						go func(i int) {
+						// paymentCreator is the actual function that handles a single payment.
+						// It creates the invoice and fires a payment, and checks for the results.
+						// This function blocks when waiting for the result, so we use
+						// paymentTimeoutWrapper to ensure that it does not get stuck forever.
+						paymentCreator := func(i int) {
 							// Generate invoice and add that invoice to target node.
 							preimage := make([]byte, 32)
 							_, err := rand.Read(preimage)
@@ -4011,7 +4038,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 							invoice := resp.PaymentRequest
 							sendReq := &lnrpc.SendRequest{
 								PaymentRequest: invoice,
-								SpiderAlgo: routing.ShortestPath,
+								SpiderAlgo:     routing.ShortestPath,
 							}
 							payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
 
@@ -4023,43 +4050,46 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 								printRoute(payIntents[i][0], payresp.PaymentRoute.Hops)
 								fmt.Printf("\n")
 								mux.Unlock()
-							    sendok <- 0 // success
+								sendok <- 0 // success
 							} else if err != nil {
-                                sendok <- 1 // local api failure
-                            } else if payresp.PaymentError != "" {
-                                sendok <- 2 // payment failure
-                            }
-						}(i)
-						select {
-                        case s := <-sendok:
-                            if s != 0 {
-                                mux.Lock()
-								fmt.Printf("%v->%v: failed\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
-																mux.Unlock()
-                            }
-						case <-timeout:
-                            mux.Lock()
-							fmt.Printf("%v->%v: timeout\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
-														mux.Unlock()
+								sendok <- 1 // local api failure
+							} else if payresp.PaymentError != "" {
+								sendok <- 2 // payment failure
+							}
 						}
-					}(i)
+						go paymentCreator(i)
+						select {
+						case s := <-sendok:
+							if s != 0 {
+								mux.Lock()
+								fmt.Printf("%v->%v: failed\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+								mux.Unlock()
+							}
+						case <-timeout:
+							mux.Lock()
+							fmt.Printf("%v->%v: timeout\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+							mux.Unlock()
+						}
+					}
+					go paymentTimeoutWrapper(i)
 				}
 			}
-		}(i)
+		}
+		go paymentDispatcher(i)
 	}
 
 	// Control goroutine
 	go func() {
 		// Create a list of payments that we will issue every round
 		var paymentOrder []int
-		for idx, rt := range(payRates) {
+		for idx, rt := range payRates {
 			for i := 0; i < rt; i++ {
 				paymentOrder = append(paymentOrder, idx)
 			}
 		}
 		numPaymentEachRound := len(paymentOrder)
-		roundInterval := 1000000.0 / baseRate	// interval between firing payments
-		
+		roundInterval := 1000000.0 / baseRate // interval between firing payments
+
 		tick := time.Tick(time.Duration(roundInterval) * time.Microsecond)
 		experimentTimeout := time.After(time.Duration(testTime) * time.Second)
 		for {
@@ -4075,28 +4105,28 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 				prand.Shuffle(numPaymentEachRound, func(i, j int) {
 					paymentOrder[i], paymentOrder[j] = paymentOrder[j], paymentOrder[i]
 				})
-				for _, idx := range(paymentOrder) {
+				for _, idx := range paymentOrder {
 					paymentTick[idx] <- 1
 				}
 			}
 		}
 	}()
-	
+
 	// Wait for the goroutines that we created.
 	wg.Wait()
 	tranwg.Wait()
 
 	printStats()
-	for cidx, _ := range(chanIDs) {
+	for cidx, _ := range chanIDs {
 		printChan(cidx)
 	}
 
 	// Finally, immediately close the channel.
 	/*
-	ctxt, _ = context.WithTimeout(ctxb, timeout)
-	for i := 0; i < numChannels; i++ {
-		closeChannelAndAssert(ctxt, t, net, nodes[connections[i][0]], chanPoints[i], false)
-	}
+		ctxt, _ = context.WithTimeout(ctxb, timeout)
+		for i := 0; i < numChannels; i++ {
+			closeChannelAndAssert(ctxt, t, net, nodes[connections[i][0]], chanPoints[i], false)
+		}
 	*/
 }
 

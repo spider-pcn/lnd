@@ -640,8 +640,11 @@ type SendRequest struct {
 	// This value can be represented either as a percentage of the amount being
 	// sent, or as a fixed amount of the maximum fee the user is willing the pay to
 	// send the payment.
-	FeeLimit   *FeeLimit `protobuf:"bytes,8,opt,name=fee_limit,json=feeLimit" json:"fee_limit,omitempty"`
-	SpiderAlgo int32     `protobuf:"varint,9,opt,name=spiderAlgo" json:"spiderAlgo,omitempty"`
+	FeeLimit *FeeLimit `protobuf:"bytes,8,opt,name=fee_limit,json=feeLimit" json:"fee_limit,omitempty"`
+	// *
+	// The Spider routing algorithm to use. Relationship between values and algorithms
+	// is defined in the beginning of routing/router.go. Zero means not using Spider.
+	SpiderAlgo int32 `protobuf:"varint,9,opt,name=spiderAlgo" json:"spiderAlgo,omitempty"`
 }
 
 func (m *SendRequest) Reset()                    { *m = SendRequest{} }
