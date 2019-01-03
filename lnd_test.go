@@ -3645,11 +3645,23 @@ func testMultiHopPayments(net *lntest.NetworkHarness, t *harnessTest) {
 	closeChannelAndAssert(ctxt, t, net, carol, chanPointCarol, false)
 }
 
-// testSpiderShortestPath benchmarks the performance of the shortest-path routing
-// algorithm of Spider. It sets up nodes and payment demands according to the
+// testSpiderShortestPath benchmarks the performance of the ShortestPaths algorithm
+// on the topology mentioned in the Hotnets Paper
+func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
+	testSpiderAlgorithms(net, t, routing.ShortestPath)
+}
+
+// testSpiderWaterfilling benchmarks the performance of the Waterfilling algorithm
+// on the topology mentioned in the Hotnets Paper
+func testSpiderWaterfilling(net *lntest.NetworkHarness, t *harnessTest) {
+	testSpiderAlgorithms(net, t, routing.Waterfilling)
+}
+
+// testSpiderAlgorithms benchmarks the performance of various algorithms of Spider.
+// It sets up nodes and payment demands according to the
 // HotNets paper, and starts sending payments on each node. It counts how
 // many payments have succeeded and report the success ratio.
-func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
+func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32) {
 	ctxb := context.Background()
 
 	// Set channel capacity
@@ -4039,7 +4051,7 @@ func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
 							invoice := resp.PaymentRequest
 							sendReq := &lnrpc.SendRequest{
 								PaymentRequest: invoice,
-								SpiderAlgo:     routing.ShortestPath,
+								SpiderAlgo:     algo,
 							}
 							payresp, err := nodes[payIntents[i][0]].SendPaymentSync(ctxb, sendReq)
 
@@ -12503,8 +12515,12 @@ type testCase struct {
 
 var testsCases = []*testCase{
 	{
-		name: "test spider routing",
+		name: "test spider shortest path routing",
 		test: testSpiderShortestPath,
+	},
+	{
+		name: "test spider WF routing",
+		test: testSpiderWaterfilling,
 	},
 	{
 		name: "onchain fund recovery",

@@ -1827,6 +1827,10 @@ func (r *rpcServer) ListChannels(ctx context.Context,
 func (r *rpcServer) savePayment(route *routing.Route,
 	amount lnwire.MilliSatoshi, preImage []byte) error {
 
+	if route == nil {
+		rpcsLog.Debugf("route is null")
+	}
+
 	paymentPath := make([][33]byte, len(route.Hops))
 	for i, hop := range route.Hops {
 		hopPub := hop.Channel.Node.PubKeyBytes

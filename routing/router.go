@@ -1857,7 +1857,7 @@ func (r *ChannelRouter) sendPaymentAsPerWaterfilling(routesAndBalances []RouteIn
 
 	// no route with non zero balance, so fail txn
 	if maxRouteEntry.route == nil {
-		return [32]byte{}, nil, nil
+		return [32]byte{}, nil, fmt.Errorf("no route with non zero balance")
 	}
 
 	// send on path with the maximum balance
