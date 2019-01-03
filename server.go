@@ -1042,13 +1042,16 @@ func (s *server) RespondToProbeInProgress(msg *lnwire.ProbeRouteChannelBalances)
 	// find the link between this node and the next hop and its balance
 	var nextChannelBalance lnwire.MilliSatoshi
 	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
-	link := links[0] //TODO: check this @vibhaa
-
 	if err != nil {
-		// If the link isn't online, then we'll report
-		// that it has zero bandwidth to the router.
-		nextChannelBalance = 0
-	} else if !link.EligibleToForward() {
+		srvrLog.Errorf("Unable to find link to nextHop %v, because %s, so sending probe %v back",
+			nextHop, err, msg)
+		msg.Error = uint8(1)
+		s.ConvertProbeToCompletedProbe(msg)
+		return
+	}
+
+	link := links[0] //TODO: check this @vibhaa
+	if !link.EligibleToForward() {
 		// If the link is found within the switch, but it isn't
 		// yet eligible to forward any HTLCs, then we'll treat
 		// it as if it isn't online in the first place.
@@ -1076,10 +1079,13 @@ func (s *server) ForwardCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
 
 	// find the link to the next hop to send message on
 	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
-	link := links[0] //TODO: check this @vibhaa
 
 	if err == nil {
+		link := links[0] //TODO: check this @vibhaa
 		link.Peer().SendMessage(false, msg)
+	} else {
+		srvrLog.Errorf("Unable to find link to nextHop %v, because %s, so ignoring probe %v",
+			nextHop, err, msg)
 	}
 }
 
@@ -1100,11 +1106,15 @@ func (s *server) ConvertProbeToCompletedProbe(msg *lnwire.ProbeRouteChannelBalan
 
 	// find the appropriate link to the next hop and send message out
 	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
-	link := links[0] //TODO: check this @vibhaa
 
 	if err == nil {
+		link := links[0] //TODO: check this @vibhaa
 		link.Peer().SendMessage(false, msg)
+	} else {
+		srvrLog.Errorf("Unable to find link to nextHop %v, because %s, so ignoring probe %v",
+			nextHop, err, msg)
 	}
+
 }
 
 // Stop gracefully shutsdown the main daemon server. This function will signal

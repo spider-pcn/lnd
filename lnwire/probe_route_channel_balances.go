@@ -40,6 +40,9 @@ type ProbeRouteChannelBalances struct {
 	// PathID denotes the path identifier as per the k-shortest paths - 0 denotes
 	// the shortest path
 	PathID uint32
+
+	// Did probe result in some error
+	Error uint8
 }
 
 // NewProbeRouteChannelBalances creates a new empty ProbeRouteChannelBalances message
@@ -63,6 +66,8 @@ func (q *ProbeRouteChannelBalances) Decode(r io.Reader, pver uint32) error {
 		&q.Sender,
 		&q.ProbeCompleted,
 		&q.CurrentNode,
+		&q.PathID,
+		&q.Error,
 	)
 }
 
@@ -78,6 +83,8 @@ func (q *ProbeRouteChannelBalances) Encode(w io.Writer, pver uint32) error {
 		q.Sender,
 		q.ProbeCompleted,
 		q.CurrentNode,
+		q.PathID,
+		q.Error,
 	)
 }
 

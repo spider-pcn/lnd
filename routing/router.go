@@ -36,6 +36,10 @@ const (
 	// if we should give up on a payment attempt. This will be used if a
 	// value isn't specified in the LightningNode struct.
 	defaultPayAttemptTimeout = time.Duration(time.Second * 60)
+
+	// defaultProbeInterval is the duration between probes for destinations
+	// that have outstanding payments
+	defaultProbeInterval = time.Duration(time.Millisecond * 100)
 )
 
 const (
@@ -393,19 +397,21 @@ func (r *ChannelRouter) HandleCompletedProbe(msg *lnwire.ProbeRouteChannelBalanc
 	}
 
 	// update state in the per destination table
-	r.updateDestRouteBalances(msg, reversedRoute)
+	if msg.Error != 1 {
+		r.updateDestRouteBalances(msg, reversedRoute)
+	}
 
 	dest := reversedRoute[len(reversedRoute)-1]
 
 	// if destination has any more outstanding payments send out a new probe
 	if numPayments, ok := r.missionControl.paymentsPerDest.Load(dest); ok && numPayments.(int) > 0 {
-		//TODO: sleep for a little while
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(defaultProbeInterval)
 
 		// reset entries in the probe message
 		msg.HopNum = 0
 		msg.ProbeCompleted = 0
 		msg.CurrentNode = msg.Sender
+		msg.Error = 0
 
 		for i := range msg.RouterChannelBalances {
 			msg.RouterChannelBalances[i] = 0
@@ -1707,39 +1713,6 @@ func (r *ChannelRouter) SendPayment(payment *LightningPayment) ([32]byte, *Route
 // destination. Additionally, the payment preimage will also be returned.
 func (r *ChannelRouter) SendToRoute(routes []*Route,
 	payment *LightningPayment) ([32]byte, *Route, error) {
-
-	/* initiate probe here for the first route
-	// Craft a probe packet to send out along this route
-	/*senderNode := r.selfNode.PubKeyBytes
-	pathLength := len(routes[0].Hops) + 1 // because sender is ignored in hops
-	probePath := make([]lnwire.Vertex, pathLength)
-	probePath[0] = lnwire.Vertex(senderNode)
-
-	// nextHopMap is actually not populated, so use the hops themselves to construct
-	// the path for the probe
-	for i := 0; i < len(probePath)-1; i++ {
-		nextHop := routes[0].Hops[i].Channel.Node.PubKeyBytes
-		probePath[i+1] = lnwire.Vertex(nextHop)
-	}
-
-	// fill in the fields for the probe message
-	probeMsg := &lnwire.ProbeRouteChannelBalances{
-		Route:                 probePath,
-		HopNum:                0,
-		RouterChannelBalances: make([]lnwire.MilliSatoshi, pathLength),
-		Sender:                lnwire.Vertex(senderNode),
-		ProbeCompleted:        0,
-		CurrentNode:           lnwire.Vertex(senderNode),
-	}
-	log.Debugf("Probe message constructed in SendToRoute:%v\n", probeMsg)
-
-	// send the probe to the first hop which will propagate it onwards
-	r.cfg.SendProbeToFirstHop(probeMsg)*/
-
-	// TODO: populate the first hop information and then send to neighbors
-	// TODO: add state to update when the probe is received back
-	// wait for some time before sending out the payment
-	// seems like a good first start
 	paySession := r.missionControl.NewPaymentSessionFromRoutes(
 		routes,
 	)
@@ -1872,7 +1845,9 @@ func (r *ChannelRouter) sendPaymentAsPerWaterfilling(routesAndBalances []RouteIn
 	// TODO (vibhaa): needs to be modified to compute exact waterfilling allocation
 	// right now just sending entire payment on the path
 	// with maximum balance
+	log.Debugf("looking through routes to find max balance\n")
 	for i, entry := range routesAndBalances {
+		log.Debugf("route %d, balance: %d\n", i, entry.minBalance)
 		if entry.minBalance > maxBalance {
 			maxBalance = entry.minBalance
 			maxRouteEntry = entry
@@ -1880,10 +1855,15 @@ func (r *ChannelRouter) sendPaymentAsPerWaterfilling(routesAndBalances []RouteIn
 		}
 	}
 
+	// no route with non zero balance, so fail txn
+	if maxRouteEntry.route == nil {
+		return [32]byte{}, nil, nil
+	}
+
 	// send on path with the maximum balance
 	// TODO:i send on multiple paths - each in a separate goroutine and keep collecting
 	// the results
-	log.Debugf("Selected WF route is %vi\n", maxRouteEntry.route)
+	log.Debugf("Selected WF route is %v\n", maxRouteEntry.route)
 	preImage, route, err := r.SendToRoute([]*Route{maxRouteEntry.route}, payment)
 
 	if err == nil {
@@ -1968,6 +1948,7 @@ func (r *ChannelRouter) createNewProbesToDest(dest Vertex, routeChoices []*Route
 // routes to a format recognized by the probe messages (list of public key addresses of the nodes in
 // the path between sender and the receiver) and then actually sending it on the first hop
 func (r *ChannelRouter) initiateProbe(route *Route, pathID uint32) {
+	log.Infof("Initiating waterfilling  probe on route %v\n", route)
 	// Craft a probe packet to send out along this route
 	senderNode := r.selfNode.PubKeyBytes
 	probePath := r.convertRouteToLnwireVertex(route)
@@ -1982,6 +1963,7 @@ func (r *ChannelRouter) initiateProbe(route *Route, pathID uint32) {
 		ProbeCompleted:        0,
 		CurrentNode:           lnwire.Vertex(senderNode),
 		PathID:                pathID,
+		Error:                 0,
 	}
 
 	// send the probe to the first hop which will propagate it onwards
