@@ -359,7 +359,6 @@ func (s *Switch) getSwitchKey() string {
 	// Note: %v just prints out the structs field values etc unless a specific
 	// representation is specified.
 	nodeName := os.Getenv("NODENAME")
-	fmt.Println("nodeName: " + nodeName);
 	if (nodeName != "") {
 		return nodeName;
 	}

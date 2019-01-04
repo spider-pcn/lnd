@@ -356,7 +356,7 @@ func (l *channelLink) updateFirebase()  {
 		// going to store queue information, for this particular channel.
 		vals := make(map[string] map[string] string)
 
-		fb := firego.New("https://lnd-test-1dd52.firebaseio.com/" + EXP_NAME + "/" + switchKey, nil)
+    fb := firego.New(FIREBASE_URL + EXP_NAME + "/" + switchKey, nil)
 		chanID := fmt.Sprintf("%v", l.ShortChanID())
 
 		qlen := fmt.Sprintf("%d", l.overflowQueue.Length())

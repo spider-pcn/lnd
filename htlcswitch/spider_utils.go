@@ -11,13 +11,14 @@ var SPIDER_FLAG bool = os.Getenv("SPIDER_QUEUE") == "1"
 
 var DEBUG_FLAG bool = true
 var LOG_FIREBASE bool = os.Getenv("SPIDER_LOG_FIREBASE") == "1"
+var FIREBASE_URL string = "https://spider2.firebaseio.com/"
 
 // multiply MAX_HTLC count by this to get max overflowQueue length
 var SPIDER_QUEUE_LENGTH_SCALE int = 8
 var FILENAME string = "./log_test.txt"
 var EXP_NAME string = os.Getenv("SPIDER_EXP_NAME")
 // time in ms
-var UPDATE_INTERVAL int = 100
+var UPDATE_INTERVAL int = 1000
 
 func hash(s string) uint32 {
         h := fnv.New32a()
