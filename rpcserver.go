@@ -1972,6 +1972,9 @@ type rpcPaymentIntent struct {
 
 	routes []*routing.Route
 
+	// sipderAlgo specifies the routing algorithm for Spider. The values and
+	// corresponding routing algorithms are defined in the beginning of
+	// routing/router.go. Zero means not using Spider.
 	spiderAlgo int
 }
 
