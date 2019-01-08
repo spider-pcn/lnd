@@ -1272,6 +1272,17 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			}
 		}
 
+    if (LOG_FIREBASE) {
+      switchKey := l.cfg.Switch.getSwitchKey()
+      chanID := fmt.Sprintf("%v", l.ShortChanID())
+      fb := firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey + "/" + chanID, nil)
+      vals := make(map[string] string)
+      vals["downstream"] = fmt.Sprintf("%x", htlc.PaymentHash[:])
+      if _, err := fb.Push(vals); err != nil {
+        debug_print("error when logging to firebase")
+      }
+    }
+
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
 			"local_log_index=%v, batch_size=%v",
 			htlc.PaymentHash[:], index, l.batchCounter+1)
@@ -1501,6 +1512,17 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 				"unable to handle upstream add HTLC: %v", err)
 			return
 		}
+
+    if (LOG_FIREBASE) {
+      switchKey := l.cfg.Switch.getSwitchKey()
+      chanID := fmt.Sprintf("%v", l.ShortChanID())
+      fb := firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey + "/" + chanID, nil)
+      vals := make(map[string] string)
+      vals["upstream"] = fmt.Sprintf("%x", msg.PaymentHash[:])
+      if _, err := fb.Push(vals); err != nil {
+        debug_print("error when logging to firebase")
+      }
+    }
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v", msg.PaymentHash[:], index)
@@ -2598,6 +2620,21 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				PaymentPreimage: preimage,
 			})
 			needUpdate = true
+      if (LOG_FIREBASE) {
+        // if we have reached this point, then the payment was fully processed
+        // at the exitHop, so we can record the transaction as successful
+        switchKey := l.cfg.Switch.getSwitchKey()
+        fb := firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey + "/success", nil)
+				//chanID := fmt.Sprintf("%v", l.ShortChanID())
+		    vals := make(map[string] string)
+				//vals["success"] = fmt.Sprintf("%x", pd.RHash)
+		    vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+        if _, err := fb.Push(vals); err != nil {
+          debug_print("error when logging to firebase")
+        }
+      }
+
+      debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
 
 		// There are additional channels left within this route. So
 		// we'll simply do some forwarding package book-keeping.

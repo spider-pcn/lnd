@@ -23,6 +23,10 @@ import (
 	"github.com/lightningnetwork/lnd/ticker"
 	"os"
 )
+// spider imports
+import (
+	"gopkg.in/zabawaba99/firego.v1"
+)
 
 const (
 	// DefaultFwdEventInterval is the duration between attempts to flush
@@ -415,6 +419,17 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 		outgoingChanID: firstHop,
 		htlc:           htlc,
 	}
+  debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
+  if (LOG_FIREBASE) {
+    debug_print(fmt.Sprintf("logging into firebase from SendHTLC with EXP NAME %s", EXP_NAME))
+    switchKey := s.getSwitchKey()
+    fb := firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
+    vals := make(map[string] string)
+    vals["attempted"] = fmt.Sprintf("%x", htlc.PaymentHash)
+    if _, err := fb.Push(vals); err != nil {
+      debug_print("error when logging to firebase")
+    }
+  }
 
 	if err := s.forward(packet); err != nil {
 		s.removePendingPayment(paymentID)
