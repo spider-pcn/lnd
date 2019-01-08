@@ -25,7 +25,7 @@ import (
 )
 // spider imports
 import (
-	"gopkg.in/zabawaba99/firego.v1"
+  "gopkg.in/zabawaba99/firego.v1"
 )
 
 const (
@@ -192,6 +192,9 @@ type Config struct {
 // HTLCs, forwarding HTLCs initiated from within the daemon, and finally
 // notifies users local-systems concerning their outstanding payment requests.
 type Switch struct {
+  // FIXME: spider variable
+  firebaseAggStats *firego.Firebase
+
 	started  int32 // To be used atomically.
 	shutdown int32 // To be used atomically.
 
@@ -421,12 +424,9 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 	}
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
   if (LOG_FIREBASE) {
-    debug_print(fmt.Sprintf("logging into firebase from SendHTLC with EXP NAME %s", EXP_NAME))
-    switchKey := s.getSwitchKey()
-    fb := firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
     vals := make(map[string] string)
     vals["attempted"] = fmt.Sprintf("%x", htlc.PaymentHash)
-    if _, err := fb.Push(vals); err != nil {
+    if _, err := s.firebaseAggStats.Push(vals); err != nil {
       debug_print("error when logging to firebase")
     }
   }
@@ -1779,6 +1779,10 @@ func (s *Switch) Start() error {
 		log.Errorf("unable to reforward responses: %v", err)
 		return err
 	}
+  if (LOG_FIREBASE) {
+    switchKey := s.getSwitchKey()
+    s.firebaseAggStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
+  }
 
 	return nil
 }

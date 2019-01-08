@@ -179,7 +179,7 @@ func TestSpiderTemporarilyInsufficientFundsMultiplePayments (t *testing.T) {
 // removing that dependency from newThreeHopNetwork(...)
 // To run this: change the name of the test to start with "Test", and then just
 // run the test as usual with go test -run "RegexOfTestToRun"
-func TestSpiderLongRunningFlow (t *testing.T) {
+func SpiderLongRunningFlow (t *testing.T) {
 	NUM_PAYMENTS := 10000
 	t.Parallel()
 	n, cleanUp := StartThreeHopNetwork(50000, 50000, t)
