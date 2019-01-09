@@ -423,6 +423,7 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 		htlc:           htlc,
 	}
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
+  debug_print("test print in switch.go")
   if (LOG_FIREBASE) {
     debug_print("logging to firebase in switch.go")
     vals := make(map[string] string)
