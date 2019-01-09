@@ -424,11 +424,11 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 	}
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
   if (LOG_FIREBASE) {
-    vals := make(map[string] string)
-    vals["attempted"] = fmt.Sprintf("%x", htlc.PaymentHash)
-    if _, err := s.firebaseAggStats.Push(vals); err != nil {
-      debug_print("error when logging to firebase")
-    }
+    //vals := make(map[string] string)
+    //vals["attempted"] = fmt.Sprintf("%x", htlc.PaymentHash)
+    //if _, err := s.firebaseAggStats.Push(vals); err != nil {
+      //debug_print("error when logging to firebase")
+    //}
   }
 
 	if err := s.forward(packet); err != nil {
