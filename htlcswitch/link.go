@@ -1276,14 +1276,14 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
-      chanID := fmt.Sprintf("%v", l.ShortChanID())
-      vals := make(map[string] map[string] string)
-      curVals := make(map[string] string)
-      curVals["downstream"] = fmt.Sprintf("%x", htlc.PaymentHash[:])
-      vals[chanID] = curVals
-      if _, err := l.firebaseAggStats.Push(vals); err != nil {
-        debug_print("error when logging to firebase")
-      }
+      //chanID := fmt.Sprintf("%v", l.ShortChanID())
+      //vals := make(map[string] map[string] string)
+      //curVals := make(map[string] string)
+      //curVals["downstream"] = fmt.Sprintf("%x", htlc.PaymentHash[:])
+      //vals[chanID] = curVals
+      //if _, err := l.firebaseAggStats.Push(vals); err != nil {
+        //debug_print("error when logging to firebase")
+      //}
     }
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1517,14 +1517,14 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
-      chanID := fmt.Sprintf("%v", l.ShortChanID())
-      vals := make(map[string] map[string] string)
-      curVals := make(map[string] string)
-      curVals["upstream"] = fmt.Sprintf("%x", msg.PaymentHash[:])
-      vals[chanID] = curVals
-      if _, err := l.firebaseAggStats.Push(vals); err != nil {
-        debug_print("error when logging to firebase")
-      }
+      //chanID := fmt.Sprintf("%v", l.ShortChanID())
+      //vals := make(map[string] map[string] string)
+      //curVals := make(map[string] string)
+      //curVals["upstream"] = fmt.Sprintf("%x", msg.PaymentHash[:])
+      //vals[chanID] = curVals
+      //if _, err := l.firebaseAggStats.Push(vals); err != nil {
+        //debug_print("error when logging to firebase")
+      //}
     }
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
@@ -2626,13 +2626,13 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
       if (LOG_FIREBASE) {
         // if we have reached this point, then the payment was fully processed
         // at the exitHop, so we can record the transaction as successful
-		    vals := make(map[string] map[string] string)
-		    curVals := make(map[string] string)
-        curVals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-		    vals["success"] = curVals
-        if _, err := l.firebaseAggStats.Push(vals); err != nil {
-          debug_print("error when logging to firebase")
-        }
+				//vals := make(map[string] map[string] string)
+				//curVals := make(map[string] string)
+        //curVals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+				//vals["success"] = curVals
+        //if _, err := l.firebaseAggStats.Push(vals); err != nil {
+          //debug_print("error when logging to firebase")
+        //}
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
