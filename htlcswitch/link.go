@@ -2627,14 +2627,14 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
       if (LOG_FIREBASE) {
         // if we have reached this point, then the payment was fully processed
         // at the exitHop, so we can record the transaction as successful
-        debug_print("link.go LOG FIREBASE, success\n")
-        vals := make(map[string] map[string] string)
-        curVals := make(map[string] string)
-        curVals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-        vals["success"] = curVals
-        if _, err := l.firebaseAggStats.Push(vals); err != nil {
-          debug_print("error when logging to firebase")
-        }
+        //debug_print("link.go LOG FIREBASE, success\n")
+        //vals := make(map[string] map[string] string)
+        //curVals := make(map[string] string)
+        //curVals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+        //vals["success"] = curVals
+        //if _, err := l.firebaseAggStats.Push(vals); err != nil {
+          //debug_print("error when logging to firebase")
+        //}
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
