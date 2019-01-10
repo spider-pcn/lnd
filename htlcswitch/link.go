@@ -443,9 +443,9 @@ func (l *channelLink) Start() error {
 	if (LOG_FIREBASE) {
 		go l.updateFirebase()
     switchKey := l.cfg.Switch.getSwitchKey()
-    l.firebaseSuccessStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
-    l.firebaseDownstreamPathStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
-    l.firebaseUpstreamPathStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
+    l.firebaseSuccessStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/success/" + switchKey, nil)
+    l.firebaseDownstreamPathStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/downstream/" + switchKey, nil)
+    l.firebaseUpstreamPathStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/upstream/" + switchKey, nil)
 	}
 
 	log.Infof("ChannelLink(%v) is starting", l)
@@ -1280,7 +1280,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
-      debug_print("downstream LOG FIREBASE")
+      debug_print("log firebase downstream\n")
       chanID := fmt.Sprintf("%v", l.ShortChanID())
       vals := make(map[string] map[string] string)
       curVals := make(map[string] string)
@@ -1522,6 +1522,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
+      debug_print("log firebase upstream\n")
       chanID := fmt.Sprintf("%v", l.ShortChanID())
       vals := make(map[string] map[string] string)
       curVals := make(map[string] string)
@@ -2631,7 +2632,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
       if (LOG_FIREBASE) {
         // if we have reached this point, then the payment was fully processed
         // at the exitHop, so we can record the transaction as successful
-        debug_print("link.go LOG FIREBASE, success\n")
+        debug_print("log firebase success\n")
         vals := make(map[string] map[string] string)
         curVals := make(map[string] string)
         curVals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
