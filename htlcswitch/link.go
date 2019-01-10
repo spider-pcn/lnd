@@ -239,7 +239,9 @@ type ChannelLinkConfig struct {
 // message ordering and updates.
 type channelLink struct {
   // FIXME: spider variable, should be under a flag
-  firebaseAggStats *firego.Firebase
+  firebaseSuccessStats *firego.Firebase
+  firebaseDownstreamPathStats *firego.Firebase
+  firebaseUpstreamPathStats *firego.Firebase
 
 	// The following fields are only meant to be used *atomically*
 	started  int32
@@ -441,7 +443,9 @@ func (l *channelLink) Start() error {
 	if (LOG_FIREBASE) {
 		go l.updateFirebase()
     switchKey := l.cfg.Switch.getSwitchKey()
-    l.firebaseAggStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
+    l.firebaseSuccessStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
+    l.firebaseDownstreamPathStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
+    l.firebaseUpstreamPathStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
 	}
 
 	log.Infof("ChannelLink(%v) is starting", l)
@@ -1282,7 +1286,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
       curVals := make(map[string] string)
       curVals["downstream"] = fmt.Sprintf("%x", htlc.PaymentHash[:])
       vals[chanID] = curVals
-      if _, err := l.firebaseAggStats.Push(vals); err != nil {
+      if _, err := l.firebaseDownstreamPathStats.Push(vals); err != nil {
         debug_print("error when logging to firebase")
       }
     }
@@ -1523,8 +1527,8 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
       curVals := make(map[string] string)
       curVals["upstream"] = fmt.Sprintf("%x", msg.PaymentHash[:])
       vals[chanID] = curVals
-      if _, err := l.firebaseAggStats.Push(vals); err != nil {
-        debug_print("error when logging to firebase")
+      if _, err := l.firebaseUpstreamPathStats.Push(vals); err != nil {
+        debug_print("error when logging upstream stats to firebase")
       }
     }
 
@@ -2627,14 +2631,14 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
       if (LOG_FIREBASE) {
         // if we have reached this point, then the payment was fully processed
         // at the exitHop, so we can record the transaction as successful
-        //debug_print("link.go LOG FIREBASE, success\n")
-        //vals := make(map[string] map[string] string)
-        //curVals := make(map[string] string)
-        //curVals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-        //vals["success"] = curVals
-        //if _, err := l.firebaseAggStats.Push(vals); err != nil {
-          //debug_print("error when logging to firebase")
-        //}
+        debug_print("link.go LOG FIREBASE, success\n")
+        vals := make(map[string] map[string] string)
+        curVals := make(map[string] string)
+        curVals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+        vals["success"] = curVals
+        if _, err := l.firebaseSuccessStats.Push(vals); err != nil {
+          debug_print("error when logging to firebase")
+        }
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
