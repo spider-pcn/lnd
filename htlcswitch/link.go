@@ -1276,7 +1276,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
-      debug_print("upstream LOG FIREBASE")
+      debug_print("downstream LOG FIREBASE")
       chanID := fmt.Sprintf("%v", l.ShortChanID())
       vals := make(map[string] map[string] string)
       curVals := make(map[string] string)
@@ -1518,14 +1518,14 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
-      //chanID := fmt.Sprintf("%v", l.ShortChanID())
-      //vals := make(map[string] map[string] string)
-      //curVals := make(map[string] string)
-      //curVals["upstream"] = fmt.Sprintf("%x", msg.PaymentHash[:])
-      //vals[chanID] = curVals
-      //if _, err := l.firebaseAggStats.Push(vals); err != nil {
-        //debug_print("error when logging to firebase")
-      //}
+      chanID := fmt.Sprintf("%v", l.ShortChanID())
+      vals := make(map[string] map[string] string)
+      curVals := make(map[string] string)
+      curVals["upstream"] = fmt.Sprintf("%x", msg.PaymentHash[:])
+      vals[chanID] = curVals
+      if _, err := l.firebaseAggStats.Push(vals); err != nil {
+        debug_print("error when logging to firebase")
+      }
     }
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
