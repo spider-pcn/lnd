@@ -244,7 +244,9 @@ type channelLink struct {
   // used so the Stats batch being pushed to firebase can be reinitialized
   // after pushing a batch periodically since it could have been updated at the
   // same time.
-  firebaseLock sync.Mutex
+  firebaseDownstreamLock sync.Mutex
+  firebaseUpstreamLock sync.Mutex
+  firebaseSuccessLock sync.Mutex
 
 	// The following fields are only meant to be used *atomically*
 	started  int32
@@ -402,21 +404,23 @@ func (l *channelLink) updateFirebase()  {
 			fmt.Println("error when logging to firebase")
 		}
     start := time.Now()
-    l.firebaseLock.Lock()
+    l.firebaseUpstreamLock.Lock()
     upstreamPathStats := make([]string, len(l.upstreamPathStats))
     copy(upstreamPathStats, l.upstreamPathStats)
+    l.upstreamPathStats = make([]string, 0)
+    l.firebaseUpstreamLock.Unlock()
+    l.firebaseDownstreamLock.Lock()
     downstreamPathStats := make([]string, len(l.downstreamPathStats))
     copy(downstreamPathStats, l.downstreamPathStats)
+    l.downstreamPathStats = make([]string, 0)
+    l.firebaseDownstreamLock.Unlock()
+    l.firebaseSuccessLock.Lock()
     successStats := make(map[string] string)
     for k,v := range l.successStats {
         successStats[k] = v
     }
-
-    // reset it to new empty map
     l.successStats = make(map[string] string)
-    l.upstreamPathStats = make([]string, 0)
-    l.downstreamPathStats = make([]string, 0)
-    l.firebaseLock.Unlock()
+    l.firebaseSuccessLock.Unlock()
 
     elapsed := time.Since(start)
     debug_print(fmt.Sprintf("elapsed time is: %s\n", elapsed))
@@ -1321,9 +1325,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
-      l.firebaseLock.Lock()
+      l.firebaseDownstreamLock.Lock()
       l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
-      l.firebaseLock.Unlock()
+      l.firebaseDownstreamLock.Unlock()
     }
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1557,9 +1561,9 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
-      l.firebaseLock.Lock()
+      l.firebaseUpstreamLock.Lock()
       l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
-      l.firebaseLock.Unlock()
+      l.firebaseUpstreamLock.Unlock()
     }
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
@@ -2659,9 +2663,9 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			})
 			needUpdate = true
       if (LOG_FIREBASE) {
-        l.firebaseLock.Lock()
+        l.firebaseSuccessLock.Lock()
         l.successStats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-        l.firebaseLock.Unlock()
+        l.firebaseSuccessLock.Unlock()
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
