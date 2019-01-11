@@ -402,6 +402,9 @@ func (l *channelLink) updateFirebase()  {
 			fmt.Println("error when logging to firebase")
 		}
     // update success stats
+    debug_print("going to measure timing for pushing values to fb\n")
+    start := time.Now()
+    l.firebaseLock.Lock()
     if _, err := fbSuccessStats.Push(l.successStats); err != nil {
       debug_print("error when logging to firebase")
     }
@@ -412,8 +415,9 @@ func (l *channelLink) updateFirebase()  {
     if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
       debug_print("error when logging upstream paths to firebase")
     }
+    elapsed := time.Since(start)
+    debug_print(fmt.Sprintf("elapsed time is: %s\n", elapsed))
     // reset it to new empty map
-    l.firebaseLock.Lock()
     l.successStats = make(map[string] string)
     l.upstreamPathStats = make([]string, 0)
     l.downstreamPathStats = make([]string, 0)
