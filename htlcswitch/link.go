@@ -243,7 +243,7 @@ type channelLink struct {
   firebaseDownstreamPathStats *firego.Firebase
   //firebaseUpstreamPathStats *firego.Firebase
   successStats map[string] string
-  //downstreamPathStats map[string] string
+  downstreamPathStats []string
   upstreamPathStats []string
 
 	// The following fields are only meant to be used *atomically*
@@ -362,8 +362,10 @@ func (l *channelLink) updateFirebase()  {
 	chanID := fmt.Sprintf("%v", l.ShortChanID())
   fb := firego.New(FIREBASE_URL + EXP_NAME + "/" + switchKey, nil)
   //l.firebaseDownstreamPathStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/downstream/" + switchKey, nil)
-  fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" +
-                              switchKey + "/"+chanID + "/upstream/", nil)
+  fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
+                              switchKey + "/"+ chanID + "/upstream/", nil)
+  fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
+                              switchKey + "/"+ chanID + "/downstream/", nil)
 	i := 0
 	for {
 		// going to store queue information, for this particular channel.
@@ -410,7 +412,13 @@ func (l *channelLink) updateFirebase()  {
     if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
       debug_print("error when logging upstream paths to firebase")
     }
-    l.upstreamPathStats = make([]string, 10)
+
+    if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
+      debug_print("error when logging upstream paths to firebase")
+    }
+    // FIXME: use lock
+    l.upstreamPathStats = make([]string, 0)
+    l.downstreamPathStats = make([]string, 0)
 
 		i += 1
 		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
@@ -465,7 +473,7 @@ func (l *channelLink) Start() error {
     switchKey := l.cfg.Switch.getSwitchKey()
     l.firebaseSuccessStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/success/" + switchKey, nil)
     l.successStats = make(map[string] string)
-    l.upstreamPathStats = make([]string, 10)
+    l.upstreamPathStats = make([]string, 0)
 	}
 
 	log.Infof("ChannelLink(%v) is starting", l)
@@ -1300,7 +1308,8 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
-      //curVals["downstream"] = fmt.Sprintf("%x", htlc.PaymentHash[:])
+      debug_print("upstreamPathStats being updated")
+      l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
     }
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1534,6 +1543,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
+      debug_print("upstreamPathStats being updated")
       l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
     }
 
