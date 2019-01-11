@@ -1308,7 +1308,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
-      debug_print("upstreamPathStats being updated")
+      debug_print("downstreamPathStats being updated")
       l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
     }
 
