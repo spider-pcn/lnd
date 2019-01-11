@@ -413,11 +413,11 @@ func (l *channelLink) updateFirebase()  {
       debug_print("error when logging upstream paths to firebase")
     }
     // reset it to new empty map
-    //l.firebaseLock.Lock()
+    l.firebaseLock.Lock()
     l.successStats = make(map[string] string)
     l.upstreamPathStats = make([]string, 0)
     l.downstreamPathStats = make([]string, 0)
-    //l.firebaseLock.Unlock()
+    l.firebaseLock.Unlock()
 
 		i += 1
 		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
@@ -1305,9 +1305,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
-      //l.firebaseLock.Lock()
+      l.firebaseLock.Lock()
       l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
-      //l.firebaseLock.Unlock()
+      l.firebaseLock.Unlock()
     }
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1541,9 +1541,9 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
-      //l.firebaseLock.Lock()
+      l.firebaseLock.Lock()
       l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
-      //l.firebaseLock.Unlock()
+      l.firebaseLock.Unlock()
     }
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
@@ -2643,9 +2643,9 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			})
 			needUpdate = true
       if (LOG_FIREBASE) {
-        //l.firebaseLock.Lock()
+        l.firebaseLock.Lock()
         l.successStats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-        //l.firebaseLock.Unlock()
+        l.firebaseLock.Unlock()
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
