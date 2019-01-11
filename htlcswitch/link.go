@@ -401,27 +401,39 @@ func (l *channelLink) updateFirebase()  {
 		if _, err := fb.Push(vals); err != nil {
 			fmt.Println("error when logging to firebase")
 		}
-    // update success stats
-    debug_print("going to measure timing for pushing values to fb\n")
     start := time.Now()
     l.firebaseLock.Lock()
-    if _, err := fbSuccessStats.Push(l.successStats); err != nil {
-      debug_print("error when logging to firebase")
+    upstreamPathStats := make([]string, len(l.upstreamPathStats))
+    copy(upstreamPathStats, l.upstreamPathStats)
+    downstreamPathStats := make([]string, len(l.downstreamPathStats))
+    copy(downstreamPathStats, l.downstreamPathStats)
+    successStats := make(map[string] string)
+    for k,v := range l.successStats {
+        successStats[k] = v
     }
-    // statistics for generating paths
-    if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
-      debug_print("error when logging upstream paths to firebase")
-    }
-    if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
-      debug_print("error when logging upstream paths to firebase")
-    }
-    elapsed := time.Since(start)
-    debug_print(fmt.Sprintf("elapsed time is: %s\n", elapsed))
+
     // reset it to new empty map
     l.successStats = make(map[string] string)
     l.upstreamPathStats = make([]string, 0)
     l.downstreamPathStats = make([]string, 0)
     l.firebaseLock.Unlock()
+
+    elapsed := time.Since(start)
+    debug_print(fmt.Sprintf("elapsed time is: %s\n", elapsed))
+
+    // update success stats
+    debug_print("going to measure timing for pushing values to fb\n")
+    if _, err := fbSuccessStats.Push(successStats); err != nil {
+      debug_print("error when logging to firebase")
+    }
+
+    // statistics for generating paths
+    if _, err := fbUpstream.Push(upstreamPathStats); err != nil {
+      debug_print("error when logging upstream paths to firebase")
+    }
+    if _, err := fbDownstream.Push(downstreamPathStats); err != nil {
+      debug_print("error when logging upstream paths to firebase")
+    }
 
 		i += 1
 		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
