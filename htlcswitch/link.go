@@ -359,16 +359,53 @@ func NewChannelLink(cfg ChannelLinkConfig,
 	}
 }
 
-func (l *channelLink) updateFirebase()  {
+func (l *channelLink) logAggregateStatsFb()  {
+  debug_print("logging aggregate stats to firebase")
+  // FIXME: don't need to make new arrays here
 	switchKey := l.cfg.Switch.getSwitchKey()
 	chanID := fmt.Sprintf("%v", l.ShortChanID())
-  fb := firego.New(FIREBASE_URL + EXP_NAME + "/" + switchKey, nil)
   fbSuccessStats := firego.New(FIREBASE_URL + EXP_NAME +
                       "/aggregateStats/success/" + switchKey, nil)
   fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
                               switchKey + "/"+ chanID + "/upstream/", nil)
   fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
                               switchKey + "/"+ chanID + "/downstream/", nil)
+
+  start := time.Now()
+  upstreamPathStats := make([]string, len(l.upstreamPathStats))
+  copy(upstreamPathStats, l.upstreamPathStats)
+  l.upstreamPathStats = make([]string, 0)
+  downstreamPathStats := make([]string, len(l.downstreamPathStats))
+  copy(downstreamPathStats, l.downstreamPathStats)
+  l.downstreamPathStats = make([]string, 0)
+  successStats := make(map[string] string)
+  for k,v := range l.successStats {
+      successStats[k] = v
+  }
+  l.successStats = make(map[string] string)
+
+  elapsed := time.Since(start)
+  debug_print(fmt.Sprintf("elapsed time is: %s\n", elapsed))
+
+  // update success stats
+  debug_print("going to measure timing for pushing values to fb\n")
+  if _, err := fbSuccessStats.Push(successStats); err != nil {
+    debug_print("error when logging to firebase")
+  }
+
+  // statistics for generating paths
+  if _, err := fbUpstream.Push(upstreamPathStats); err != nil {
+    debug_print("error when logging upstream paths to firebase")
+  }
+  if _, err := fbDownstream.Push(downstreamPathStats); err != nil {
+    debug_print("error when logging upstream paths to firebase")
+  }
+}
+
+func (l *channelLink) updateFirebase()  {
+	switchKey := l.cfg.Switch.getSwitchKey()
+	chanID := fmt.Sprintf("%v", l.ShortChanID())
+  fb := firego.New(FIREBASE_URL + EXP_NAME + "/" + switchKey, nil)
 	i := 0
 	for {
 		// going to store queue information, for this particular channel.
@@ -403,41 +440,6 @@ func (l *channelLink) updateFirebase()  {
 		if _, err := fb.Push(vals); err != nil {
 			fmt.Println("error when logging to firebase")
 		}
-    start := time.Now()
-    l.firebaseUpstreamLock.Lock()
-    upstreamPathStats := make([]string, len(l.upstreamPathStats))
-    copy(upstreamPathStats, l.upstreamPathStats)
-    l.upstreamPathStats = make([]string, 0)
-    l.firebaseUpstreamLock.Unlock()
-    l.firebaseDownstreamLock.Lock()
-    downstreamPathStats := make([]string, len(l.downstreamPathStats))
-    copy(downstreamPathStats, l.downstreamPathStats)
-    l.downstreamPathStats = make([]string, 0)
-    l.firebaseDownstreamLock.Unlock()
-    l.firebaseSuccessLock.Lock()
-    successStats := make(map[string] string)
-    for k,v := range l.successStats {
-        successStats[k] = v
-    }
-    l.successStats = make(map[string] string)
-    l.firebaseSuccessLock.Unlock()
-
-    elapsed := time.Since(start)
-    debug_print(fmt.Sprintf("elapsed time is: %s\n", elapsed))
-
-    // update success stats
-    debug_print("going to measure timing for pushing values to fb\n")
-    if _, err := fbSuccessStats.Push(successStats); err != nil {
-      debug_print("error when logging to firebase")
-    }
-
-    // statistics for generating paths
-    if _, err := fbUpstream.Push(upstreamPathStats); err != nil {
-      debug_print("error when logging upstream paths to firebase")
-    }
-    if _, err := fbDownstream.Push(downstreamPathStats); err != nil {
-      debug_print("error when logging upstream paths to firebase")
-    }
 
 		i += 1
 		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
@@ -565,6 +567,11 @@ func (l *channelLink) Stop() {
 	if l.cfg.ChainEvents.Cancel != nil {
 		l.cfg.ChainEvents.Cancel()
 	}
+
+  if (LOG_FIREBASE) {
+    l.logAggregateStatsFb()
+  }
+
 
 	l.updateFeeTimer.Stop()
 	l.channel.Stop()
@@ -1325,9 +1332,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
-      l.firebaseDownstreamLock.Lock()
       l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
-      l.firebaseDownstreamLock.Unlock()
     }
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1561,9 +1566,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
-      l.firebaseUpstreamLock.Lock()
       l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
-      l.firebaseUpstreamLock.Unlock()
     }
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
@@ -2663,9 +2666,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			})
 			needUpdate = true
       if (LOG_FIREBASE) {
-        l.firebaseSuccessLock.Lock()
         l.successStats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-        l.firebaseSuccessLock.Unlock()
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
