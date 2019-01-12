@@ -193,7 +193,7 @@ type Config struct {
 // notifies users local-systems concerning their outstanding payment requests.
 type Switch struct {
   // FIXME: spider variable
-  firebaseAggStats *firego.Firebase
+  sentHtlc []string
 
 	started  int32 // To be used atomically.
 	shutdown int32 // To be used atomically.
@@ -425,12 +425,8 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
   debug_print("test print in switch.go")
   if (LOG_FIREBASE) {
+    s.sentHtlc = append(s.sentHtlc, fmt.Sprintf("%x", htlc.PaymentHash))
     debug_print("logging to firebase in switch.go")
-    vals := make(map[string] string)
-    vals["attempted"] = fmt.Sprintf("%x", htlc.PaymentHash)
-    if _, err := s.firebaseAggStats.Push(vals); err != nil {
-      debug_print("error when logging to firebase")
-    }
   }
 
 	if err := s.forward(packet); err != nil {
@@ -1781,10 +1777,6 @@ func (s *Switch) Start() error {
 		log.Errorf("unable to reforward responses: %v", err)
 		return err
 	}
-  if (LOG_FIREBASE) {
-    switchKey := s.getSwitchKey()
-    s.firebaseAggStats = firego.New(FIREBASE_URL + EXP_NAME + "/aggregateStats/" + switchKey, nil)
-  }
 
 	return nil
 }
@@ -1944,6 +1936,15 @@ func handleBatchFwdErrs(errChan chan error) {
 	}
 }
 
+func (s *Switch) logAggregateStatsFb() {
+  switchKey := s.getSwitchKey()
+  fb := firego.New(FIREBASE_URL + EXP_NAME +
+                      "/aggregateStats/attempted/" + switchKey, nil)
+  if _, err := fb.Push(s.sentHtlc); err != nil {
+    debug_print("error when logging to firebase")
+  }
+}
+
 // Stop gracefully stops all active helper goroutines, then waits until they've
 // exited.
 func (s *Switch) Stop() error {
@@ -1951,6 +1952,9 @@ func (s *Switch) Stop() error {
 		log.Warn("Htlc Switch already stopped")
 		return errors.New("htlc switch already shutdown")
 	}
+  if (LOG_FIREBASE) {
+    s.logAggregateStatsFb()
+  }
 
 	log.Infof("HTLC Switch shutting down")
 
