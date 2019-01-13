@@ -238,8 +238,8 @@ type ChannelLinkConfig struct {
 // switch. Additionally, the link encapsulate logic of commitment protocol
 // message ordering and updates.
 type channelLink struct {
-  //successStats map[string] string
-  //successStatsLock sync.Mutex
+  //successtats map[string] string
+  //successtatsLock sync.Mutex
   //downstreamPathStats []string
   //downstreamPathStatsLock sync.Mutex
   //upstreamPathStats []string
@@ -247,7 +247,7 @@ type channelLink struct {
 
   // long-lived firebase connections
   successFirebaseConn *firego.Firebase
-  successsFirebaseConnMutex sync.Mutex
+  successFirebaseConnMutex sync.Mutex
   downstreamFirebaseConn *firego.Firebase
   downstreamFirebaseConnMutex sync.Mutex
   upstreamFirebaseConn *firego.Firebase
@@ -369,9 +369,9 @@ func (l *channelLink) logAggregateStatsFb()  {
   //// FIXME: don't need to make new arrays here
 	//switchKey := l.cfg.Switch.getSwitchKey()
 	//chanID := fmt.Sprintf("%v", l.ShortChanID())
-  //fbSuccessStats := firego.New(FIREBASE_URL + EXP_NAME +
+  //fbsuccesstats := firego.New(FIREBASE_URL + EXP_NAME +
                       //"/aggregateStats/success/" + switchKey + "/"+chanID, nil)
-  ////fbSuccessStats := firego.New(FIREBASE_URL + EXP_NAME +
+  ////fbsuccesstats := firego.New(FIREBASE_URL + EXP_NAME +
                       ////"/aggregateStats/success/" + switchKey, nil)
   //fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
                               //switchKey + "/"+ chanID + "/upstream/", nil)
@@ -379,7 +379,7 @@ func (l *channelLink) logAggregateStatsFb()  {
                               //switchKey + "/"+ chanID + "/downstream/", nil)
 
   //// update success stats
-  //if _, err := fbSuccessStats.Push(l.successStats); err != nil {
+  //if _, err := fbsuccesstats.Push(l.successtats); err != nil {
     //debug_print("error when logging to firebase")
   //}
   //// statistics for generating paths
@@ -503,7 +503,7 @@ func (l *channelLink) Start() error {
     l.upstreamFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
                 "/paths/upstream/" + switchKey + "/" + chanID, nil)
 
-    //l.successStats = make(map[string] string)
+    //l.successtats = make(map[string] string)
     //l.upstreamPathStats = make([]string, 0)
     //l.downstreamPathStats = make([]string, 0)
 	}
@@ -1359,6 +1359,11 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
       //l.downstreamPathStatsLock.Lock()
       //l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
       //l.downstreamPathStatsLock.Unlock()
+      // Method 3:
+      val := fmt.Sprintf("%x", htlc.PaymentHash[:])
+      l.downstreamFirebaseConnMutex.Lock()
+      debug_print(fmt.Sprintf("downstream val: %s\n", val))
+      l.downstreamFirebaseConnMutex.Unlock()
     }
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1603,6 +1608,10 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
       //l.upstreamPathStatsLock.Lock()
       //l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
       //l.upstreamPathStatsLock.Unlock()
+      val := fmt.Sprintf("%x", msg.PaymentHash[:])
+      l.upstreamFirebaseConnMutex.Lock()
+      debug_print(fmt.Sprintf("upstream val: %s\n", val))
+      l.upstreamFirebaseConnMutex.Unlock()
     }
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
@@ -2705,19 +2714,23 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
         // we do this in a new goroutine so this doesn't hold up the rest of
         // the lnd stuff from functioning
         //go func() {
-          //vals := make(map[string] string)
-          //vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
-                                        //int32(time.Now().Unix()))
-          //l.successsFirebaseConnMutex.Lock()
+          //l.successFirebaseConnMutex.Lock()
           //if _, err := l.successFirebaseConn.Push(vals); err != nil {
             //debug_print("error when logging to firebase")
           //}
-          //l.successsFirebaseConnMutex.Unlock()
+          //l.successFirebaseConnMutex.Unlock()
         //}()
-        //l.successStatsLock.Lock()
-        //l.successStats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
+        //l.successtatsLock.Lock()
+        //l.successtats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
                             //int32(time.Now().Unix()))
-        //l.successStatsLock.Unlock()
+        //l.successtatsLock.Unlock()
+        // Method 3:
+        vals := make(map[string] string)
+        vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
+                                      int32(time.Now().Unix()))
+        l.successFirebaseConnMutex.Lock()
+        debug_print(fmt.Sprintf("%v", vals))
+        l.successFirebaseConnMutex.Unlock()
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))

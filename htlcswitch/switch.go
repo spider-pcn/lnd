@@ -430,8 +430,11 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 	}
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
   if (LOG_FIREBASE) {
+    /// Method 1:
     //s.sentHtlcMutex.Lock()
     //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+    //s.sentHtlcMutex.Unlock()
+    /// Method 2:
     //go func() {
       //vals := make(map[string] string)
       //vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
@@ -442,6 +445,13 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
       //}
       //s.firebaseMutex.Unlock()
     //}()
+    /// Method 3:
+    vals := make(map[string] string)
+    vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
+                                  int32(time.Now().Unix()))
+    s.firebaseMutex.Lock()
+    debug_print(fmt.Sprintf("%v", vals))
+    s.firebaseMutex.Unlock()
   }
 
 	if err := s.forward(packet); err != nil {
