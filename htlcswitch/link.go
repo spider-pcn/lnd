@@ -239,8 +239,12 @@ type ChannelLinkConfig struct {
 // message ordering and updates.
 type channelLink struct {
   successStats map[string] string
+  successStatsLock sync.Mutex
   downstreamPathStats []string
+  downstreamPathStatsLock sync.Mutex
   upstreamPathStats []string
+  upstreamPathStatsLock sync.Mutex
+
   // used so the Stats batch being pushed to firebase can be reinitialized
   // after pushing a batch periodically since it could have been updated at the
   // same time.
@@ -371,33 +375,15 @@ func (l *channelLink) logAggregateStatsFb()  {
   fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
                               switchKey + "/"+ chanID + "/downstream/", nil)
 
-  start := time.Now()
-  upstreamPathStats := make([]string, len(l.upstreamPathStats))
-  copy(upstreamPathStats, l.upstreamPathStats)
-  l.upstreamPathStats = make([]string, 0)
-  downstreamPathStats := make([]string, len(l.downstreamPathStats))
-  copy(downstreamPathStats, l.downstreamPathStats)
-  l.downstreamPathStats = make([]string, 0)
-  successStats := make(map[string] string)
-  for k,v := range l.successStats {
-      successStats[k] = v
-  }
-  l.successStats = make(map[string] string)
-
-  elapsed := time.Since(start)
-  debug_print(fmt.Sprintf("elapsed time is: %s\n", elapsed))
-
   // update success stats
-  debug_print("going to measure timing for pushing values to fb\n")
-  if _, err := fbSuccessStats.Push(successStats); err != nil {
+  if _, err := fbSuccessStats.Push(l.successStats); err != nil {
     debug_print("error when logging to firebase")
   }
-
   // statistics for generating paths
-  if _, err := fbUpstream.Push(upstreamPathStats); err != nil {
+  if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
     debug_print("error when logging upstream paths to firebase")
   }
-  if _, err := fbDownstream.Push(downstreamPathStats); err != nil {
+  if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
     debug_print("error when logging upstream paths to firebase")
   }
 }
@@ -493,6 +479,7 @@ func (l *channelLink) Start() error {
 		go l.updateFirebase()
     l.successStats = make(map[string] string)
     l.upstreamPathStats = make([]string, 0)
+    l.downstreamPathStats = make([]string, 0)
 	}
 
 	log.Infof("ChannelLink(%v) is starting", l)
@@ -1332,7 +1319,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
+      l.downstreamPathStatsLock.Lock()
       l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
+      l.downstreamPathStatsLock.Unlock()
     }
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1566,7 +1555,9 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
+      l.upstreamPathStatsLock.Lock()
       l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
+      l.upstreamPathStatsLock.Unlock()
     }
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
@@ -2666,8 +2657,10 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			})
 			needUpdate = true
       if (LOG_FIREBASE) {
+        l.successStatsLock.Lock()
         l.successStats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
                             int32(time.Now().Unix()))
+        l.successStatsLock.Unlock()
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
