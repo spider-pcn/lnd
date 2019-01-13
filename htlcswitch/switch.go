@@ -193,7 +193,7 @@ type Config struct {
 // notifies users local-systems concerning their outstanding payment requests.
 type Switch struct {
   // FIXME: spider variable
-  sentHtlc []string
+  sentHtlc map[string] string
 
 	started  int32 // To be used atomically.
 	shutdown int32 // To be used atomically.
@@ -425,8 +425,8 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
   debug_print("test print in switch.go")
   if (LOG_FIREBASE) {
-    s.sentHtlc = append(s.sentHtlc, fmt.Sprintf("%x", htlc.PaymentHash))
-    debug_print("logging to firebase in switch.go")
+    s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+    debug_print("saving data for logging to firebase in switch.go")
   }
 
 	if err := s.forward(packet); err != nil {
@@ -1125,7 +1125,6 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 			)
 			debug_print(fmt.Sprintf("link being considered is: %s\n", link.ShortChanID()))
 			if err != nil {
-				debug_print("err was not nil!")
 				switch err {
 					case lnwallet.ErrBelowChanReserve:
 						debug_print(fmt.Sprintf("lnwallet.ErrBelowChanReserve when checking future links. We don't care\n"))

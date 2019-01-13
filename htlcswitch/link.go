@@ -2014,7 +2014,7 @@ func (l *channelLink) Bandwidth() lnwire.MilliSatoshi {
 	// If the channel reserve is greater than the total available balance
 	// of the link, just return 0.
 	reserve := lnwire.NewMSatFromSatoshis(l.channel.LocalChanReserve())
-	debug_print(fmt.Sprintf("reserve %v", reserve))
+	//debug_print(fmt.Sprintf("reserve %v", reserve))
 	if linkBandwidth < reserve {
 		return 0
 	}
@@ -2666,7 +2666,8 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			})
 			needUpdate = true
       if (LOG_FIREBASE) {
-        l.successStats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+        l.successStats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
+                            int32(time.Now().Unix()))
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
