@@ -193,10 +193,11 @@ type Config struct {
 // notifies users local-systems concerning their outstanding payment requests.
 type Switch struct {
   // FIXME: spider variable
-  sentHtlc map[string] string
+  //sentHtlc map[string] string
   // since sentHtlc will be updated by multiple threads at the same time, we
   // need to protect it with a mutex
-	sentHtlcMutex sync.Mutex
+	//sentHtlcMutex sync.Mutex
+  firebaseConn *firego.Firebase
 
 	started  int32 // To be used atomically.
 	shutdown int32 // To be used atomically.
@@ -427,10 +428,17 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 	}
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
   if (LOG_FIREBASE) {
-    debug_print("saving data for logging to firebase in switch.go")
     //s.sentHtlcMutex.Lock()
     //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
     //s.sentHtlcMutex.Unlock()
+    go func() {
+      vals := make(map[string] string)
+      vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
+                                    int32(time.Now().Unix()))
+      if _, err := s.firebaseConn.Push(vals); err != nil {
+        debug_print("error when logging to firebase")
+      }
+    }()
   }
 
 	if err := s.forward(packet); err != nil {
@@ -1765,7 +1773,10 @@ func (s *Switch) Start() error {
 	}
 
   if (LOG_FIREBASE) {
-    s.sentHtlc = make(map[string] string)
+    //s.sentHtlc = make(map[string] string)
+    switchKey := s.getSwitchKey()
+    s.firebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                "/aggregateStats/attempted/" + switchKey, nil)
   }
 
 	log.Infof("Starting HTLC Switch")
@@ -1944,13 +1955,13 @@ func handleBatchFwdErrs(errChan chan error) {
 }
 
 func (s *Switch) logAggregateStatsFb() {
-  debug_print("in switch's logAggregateStatsFb\n")
-  switchKey := s.getSwitchKey()
-  fb := firego.New(FIREBASE_URL + EXP_NAME +
-                      "/aggregateStats/attempted/" + switchKey, nil)
-  if _, err := fb.Push(s.sentHtlc); err != nil {
-    debug_print("error when logging to firebase")
-  }
+  //debug_print("in switch's logAggregateStatsFb\n")
+  //switchKey := s.getSwitchKey()
+  //fb := firego.New(FIREBASE_URL + EXP_NAME +
+                      //"/aggregateStats/attempted/" + switchKey, nil)
+  //if _, err := fb.Push(s.sentHtlc); err != nil {
+    //debug_print("error when logging to firebase")
+  //}
 }
 
 // Stop gracefully stops all active helper goroutines, then waits until they've

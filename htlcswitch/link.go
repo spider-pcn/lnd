@@ -247,6 +247,8 @@ type channelLink struct {
 
   // long-lived firebase connections
   successFirebaseConn *firego.Firebase
+  downstreamFirebaseConn *firego.Firebase
+  upstreamFirebaseConn *firego.Firebase
 
 	// The following fields are only meant to be used *atomically*
 	started  int32
@@ -487,8 +489,16 @@ func (l *channelLink) Start() error {
 		go l.updateFirebase()
     switchKey := l.cfg.Switch.getSwitchKey()
     chanID := fmt.Sprintf("%v", l.ShortChanID())
+    //l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                //"/aggregateStats/success/" + switchKey + "/" + chanID, nil)
+    // which channel we receive the payment on shouldn't matter for computing
+    // success / failure percentages
     l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
-                "/aggregateStats/success/" + switchKey + "/" + chanID, nil)
+                "/aggregateStats/success/" + switchKey, nil)
+    l.downstreamFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                "/paths/downstream/" + switchKey + "/" + chanID, nil)
+    l.upstreamFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                "/paths/upstream/" + switchKey + "/" + chanID, nil)
 
     //l.successStats = make(map[string] string)
     //l.upstreamPathStats = make([]string, 0)
@@ -1335,6 +1345,12 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
+      go func() {
+        val := fmt.Sprintf("%x", htlc.PaymentHash[:])
+        if _, err := l.downstreamFirebaseConn.Push(val); err != nil {
+          debug_print("error when logging to firebase")
+        }
+      }()
       //l.downstreamPathStatsLock.Lock()
       //l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
       //l.downstreamPathStatsLock.Unlock()
@@ -1571,6 +1587,12 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
+      go func() {
+        val := fmt.Sprintf("%x", msg.PaymentHash[:])
+        if _, err := l.upstreamFirebaseConn.Push(val); err != nil {
+          debug_print("error when logging to firebase")
+        }
+      }()
       //l.upstreamPathStatsLock.Lock()
       //l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
       //l.upstreamPathStatsLock.Unlock()
