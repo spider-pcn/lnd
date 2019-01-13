@@ -194,6 +194,9 @@ type Config struct {
 type Switch struct {
   // FIXME: spider variable
   sentHtlc map[string] string
+  // since sentHtlc will be updated by multiple threads at the same time, we
+  // need to protect it with a mutex
+	sentHtlcMutex sync.Mutex
 
 	started  int32 // To be used atomically.
 	shutdown int32 // To be used atomically.
@@ -425,7 +428,9 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
   if (LOG_FIREBASE) {
     debug_print("saving data for logging to firebase in switch.go")
+    s.sentHtlcMutex.Lock()
     s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+    s.sentHtlcMutex.Unlock()
   }
 
 	if err := s.forward(packet); err != nil {
