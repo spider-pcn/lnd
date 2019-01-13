@@ -428,9 +428,9 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
   if (LOG_FIREBASE) {
     debug_print("saving data for logging to firebase in switch.go")
-    s.sentHtlcMutex.Lock()
-    s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-    s.sentHtlcMutex.Unlock()
+    //s.sentHtlcMutex.Lock()
+    //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+    //s.sentHtlcMutex.Unlock()
   }
 
 	if err := s.forward(packet); err != nil {
@@ -1944,6 +1944,7 @@ func handleBatchFwdErrs(errChan chan error) {
 }
 
 func (s *Switch) logAggregateStatsFb() {
+  debug_print("in logAggregateStatsFb\n")
   switchKey := s.getSwitchKey()
   fb := firego.New(FIREBASE_URL + EXP_NAME +
                       "/aggregateStats/attempted/" + switchKey, nil)
