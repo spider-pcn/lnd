@@ -433,14 +433,14 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
     //s.sentHtlcMutex.Lock()
     //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
     go func() {
-      s.firebaseMutex.Lock()
       vals := make(map[string] string)
       vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
                                     int32(time.Now().Unix()))
-      if _, err := s.firebaseConn.Push(vals); err != nil {
-        debug_print("error when logging to firebase")
-      }
-      s.firebaseMutex.Unlock()
+      //s.firebaseMutex.Lock()
+      //if _, err := s.firebaseConn.Push(vals); err != nil {
+        //debug_print("error when logging to firebase")
+      //}
+      //s.firebaseMutex.Unlock()
     }()
   }
 
