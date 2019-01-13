@@ -369,7 +369,9 @@ func (l *channelLink) logAggregateStatsFb()  {
 	switchKey := l.cfg.Switch.getSwitchKey()
 	chanID := fmt.Sprintf("%v", l.ShortChanID())
   fbSuccessStats := firego.New(FIREBASE_URL + EXP_NAME +
-                      "/aggregateStats/success/" + switchKey, nil)
+                      "/aggregateStats/success/" + switchKey + "/"+chanID, nil)
+  //fbSuccessStats := firego.New(FIREBASE_URL + EXP_NAME +
+                      //"/aggregateStats/success/" + switchKey, nil)
   fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
                               switchKey + "/"+ chanID + "/upstream/", nil)
   fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
@@ -1319,9 +1321,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
-      l.downstreamPathStatsLock.Lock()
+      //l.downstreamPathStatsLock.Lock()
       l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
-      l.downstreamPathStatsLock.Unlock()
+      //l.downstreamPathStatsLock.Unlock()
     }
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1555,9 +1557,9 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
-      l.upstreamPathStatsLock.Lock()
+      //l.upstreamPathStatsLock.Lock()
       l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
-      l.upstreamPathStatsLock.Unlock()
+      //l.upstreamPathStatsLock.Unlock()
     }
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
@@ -2657,10 +2659,10 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			})
 			needUpdate = true
       if (LOG_FIREBASE) {
-        l.successStatsLock.Lock()
+        //l.successStatsLock.Lock()
         l.successStats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
                             int32(time.Now().Unix()))
-        l.successStatsLock.Unlock()
+        //l.successStatsLock.Unlock()
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
