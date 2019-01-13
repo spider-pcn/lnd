@@ -395,6 +395,7 @@ func (l *channelLink) updateFirebase()  {
 	chanID := fmt.Sprintf("%v", l.ShortChanID())
   fb := firego.New(FIREBASE_URL + EXP_NAME + "/" + switchKey, nil)
 	i := 0
+  oldDownstreamLen := 0
 	for {
     debug_print(fmt.Sprintf("updateFirebase: i = %d\n", i))
 		// going to store queue information, for this particular channel.
@@ -426,9 +427,18 @@ func (l *channelLink) updateFirebase()  {
 		curVals["bandwidth"] = bandwidth
 		// set it for uploading
 		vals[chanID] = curVals
-		if _, err := fb.Push(vals); err != nil {
-			fmt.Println("error when logging to firebase")
-		}
+    go func () {
+      if _, err := fb.Push(vals); err != nil {
+        fmt.Println("error when logging to firebase")
+      }
+    }()
+
+    if (oldDownstreamLen != 0 && oldDownstreamLen ==
+                  len(l.downstreamPathStats)) {
+      l.logAggregateStatsFb()
+    }
+
+    oldDownstreamLen = len(l.downstreamPathStats)
 
 		i += 1
 		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
