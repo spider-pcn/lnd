@@ -394,7 +394,7 @@ func (l *channelLink) logAggregateStatsFb()  {
 func (l *channelLink) updateFirebase()  {
 	switchKey := l.cfg.Switch.getSwitchKey()
 	chanID := fmt.Sprintf("%v", l.ShortChanID())
-  fb := firego.New(FIREBASE_URL + EXP_NAME + "/" + switchKey, nil)
+  fb := firego.New(FIREBASE_URL + EXP_NAME + "/channelStats/" + switchKey, nil)
 	i := 0
   //oldDownstreamLen := 0
 	for {
