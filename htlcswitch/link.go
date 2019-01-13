@@ -1348,14 +1348,14 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		}
 
     if (LOG_FIREBASE) {
-      go func() {
+      //go func() {
         // val := fmt.Sprintf("%x", htlc.PaymentHash[:])
         //l.downstreamFirebaseConnMutex.Lock()
         //if _, err := l.downstreamFirebaseConn.Push(val); err != nil {
           //debug_print("error when logging to firebase")
         //}
         //l.downstreamFirebaseConnMutex.Unlock()
-      }()
+      //}()
       //l.downstreamPathStatsLock.Lock()
       //l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
       //l.downstreamPathStatsLock.Unlock()
@@ -1592,14 +1592,14 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
     if (LOG_FIREBASE) {
-      go func() {
+      //go func() {
         //val := fmt.Sprintf("%x", msg.PaymentHash[:])
         //l.upstreamFirebaseConnMutex.Lock()
         //if _, err := l.upstreamFirebaseConn.Push(val); err != nil {
           //debug_print("error when logging to firebase")
         //}
         //l.upstreamFirebaseConnMutex.Unlock()
-      }()
+      //}()
       //l.upstreamPathStatsLock.Lock()
       //l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
       //l.upstreamPathStatsLock.Unlock()
@@ -2704,16 +2704,16 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
       if (LOG_FIREBASE) {
         // we do this in a new goroutine so this doesn't hold up the rest of
         // the lnd stuff from functioning
-        go func() {
-          vals := make(map[string] string)
-          vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
-                                        int32(time.Now().Unix()))
+        //go func() {
+          //vals := make(map[string] string)
+          //vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
+                                        //int32(time.Now().Unix()))
           //l.successsFirebaseConnMutex.Lock()
           //if _, err := l.successFirebaseConn.Push(vals); err != nil {
             //debug_print("error when logging to firebase")
           //}
           //l.successsFirebaseConnMutex.Unlock()
-        }()
+        //}()
         //l.successStatsLock.Lock()
         //l.successStats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
                             //int32(time.Now().Unix()))
