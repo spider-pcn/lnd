@@ -487,7 +487,8 @@ func (l *channelLink) Start() error {
 		go l.updateFirebase()
     switchKey := l.cfg.Switch.getSwitchKey()
     chanID := fmt.Sprintf("%v", l.ShortChanID())
-    l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME + "/" + switchKey + "/" + chanID, nil)
+    l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                "/aggregateStats/success/" + switchKey + "/" + chanID, nil)
 
     //l.successStats = make(map[string] string)
     //l.upstreamPathStats = make([]string, 0)
