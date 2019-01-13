@@ -1361,9 +1361,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
       //l.downstreamPathStatsLock.Unlock()
       // Method 3:
       val := fmt.Sprintf("%x", htlc.PaymentHash[:])
-      l.downstreamFirebaseConnMutex.Lock()
+      //l.downstreamFirebaseConnMutex.Lock()
       debug_print(fmt.Sprintf("downstream val: %s\n", val))
-      l.downstreamFirebaseConnMutex.Unlock()
+      //l.downstreamFirebaseConnMutex.Unlock()
     }
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1609,9 +1609,9 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
       //l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
       //l.upstreamPathStatsLock.Unlock()
       val := fmt.Sprintf("%x", msg.PaymentHash[:])
-      l.upstreamFirebaseConnMutex.Lock()
+      //l.upstreamFirebaseConnMutex.Lock()
       debug_print(fmt.Sprintf("upstream val: %s\n", val))
-      l.upstreamFirebaseConnMutex.Unlock()
+      //l.upstreamFirebaseConnMutex.Unlock()
     }
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
@@ -2728,9 +2728,9 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
         vals := make(map[string] string)
         vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
                                       int32(time.Now().Unix()))
-        l.successFirebaseConnMutex.Lock()
+        //l.successFirebaseConnMutex.Lock()
         debug_print(fmt.Sprintf("%v", vals))
-        l.successFirebaseConnMutex.Unlock()
+        //l.successFirebaseConnMutex.Unlock()
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
