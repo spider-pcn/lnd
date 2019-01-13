@@ -2713,23 +2713,26 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
       if (LOG_FIREBASE) {
         // we do this in a new goroutine so this doesn't hold up the rest of
         // the lnd stuff from functioning
-        //go func() {
+        go func() {
+          vals := make(map[string] string)
+          vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
+                                        int32(time.Now().Unix()))
           //l.successFirebaseConnMutex.Lock()
-          //if _, err := l.successFirebaseConn.Push(vals); err != nil {
-            //debug_print("error when logging to firebase")
-          //}
+          if _, err := l.successFirebaseConn.Push(vals); err != nil {
+            debug_print("error when logging to firebase")
+          }
           //l.successFirebaseConnMutex.Unlock()
-        //}()
+        }()
         //l.successtatsLock.Lock()
         //l.successtats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
                             //int32(time.Now().Unix()))
         //l.successtatsLock.Unlock()
         // Method 3:
-        vals := make(map[string] string)
-        vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
-                                      int32(time.Now().Unix()))
+        //vals := make(map[string] string)
+        //vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
+                                      //int32(time.Now().Unix()))
         //l.successFirebaseConnMutex.Lock()
-        debug_print(fmt.Sprintf("%v", vals))
+        //debug_print(fmt.Sprintf("%v", vals))
         //l.successFirebaseConnMutex.Unlock()
       }
 
