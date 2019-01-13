@@ -197,7 +197,9 @@ type Switch struct {
   // since sentHtlc will be updated by multiple threads at the same time, we
   // need to protect it with a mutex
 	//sentHtlcMutex sync.Mutex
+  // using streaming firebase connection
   firebaseConn *firego.Firebase
+  firebaseMutex sync.Mutex
 
 	started  int32 // To be used atomically.
 	shutdown int32 // To be used atomically.
@@ -430,14 +432,15 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
   if (LOG_FIREBASE) {
     //s.sentHtlcMutex.Lock()
     //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-    //s.sentHtlcMutex.Unlock()
     go func() {
+      s.firebaseMutex.Lock()
       vals := make(map[string] string)
       vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
                                     int32(time.Now().Unix()))
       if _, err := s.firebaseConn.Push(vals); err != nil {
         debug_print("error when logging to firebase")
       }
+      s.firebaseMutex.Unlock()
     }()
   }
 
