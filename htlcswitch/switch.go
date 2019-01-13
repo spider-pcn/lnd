@@ -423,10 +423,9 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 		htlc:           htlc,
 	}
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
-  debug_print("test print in switch.go")
   if (LOG_FIREBASE) {
-    s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
     debug_print("saving data for logging to firebase in switch.go")
+    s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
   }
 
 	if err := s.forward(packet); err != nil {
@@ -1759,6 +1758,10 @@ func (s *Switch) Start() error {
 		log.Warn("Htlc Switch already started")
 		return errors.New("htlc switch already started")
 	}
+
+  if (LOG_FIREBASE) {
+    s.sentHtlc = make(map[string] string)
+  }
 
 	log.Infof("Starting HTLC Switch")
 
