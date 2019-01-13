@@ -557,11 +557,6 @@ func (l *channelLink) Stop() {
 		l.cfg.ChainEvents.Cancel()
 	}
 
-  if (LOG_FIREBASE) {
-    l.logAggregateStatsFb()
-  }
-
-
 	l.updateFeeTimer.Stop()
 	l.channel.Stop()
 	l.overflowQueue.Stop()
@@ -887,6 +882,13 @@ func (l *channelLink) htlcManager() {
 		l.wg.Done()
 		log.Infof("ChannelLink(%v) has exited", l)
 	}()
+  defer func() {
+    debug_print("in htlcManager's deferred func\n")
+    if (LOG_FIREBASE) {
+      l.logAggregateStatsFb()
+    }
+  }()
+
 	log.Infof("HTLC manager for ChannelPoint(%v) started, "+
 		"bandwidth=%v", l.channel.ChannelPoint(), l.Bandwidth())
 	debug_print(fmt.Sprintf("HTLC manager for ChannelPoint(%v) started, "+
