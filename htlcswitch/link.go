@@ -364,7 +364,7 @@ func NewChannelLink(cfg ChannelLinkConfig,
 }
 
 func (l *channelLink) logAggregateStatsFb()  {
-  debug_print("logging aggregate stats to firebase")
+  debug_print("in link's logAggregateStatsFb\n")
   // FIXME: don't need to make new arrays here
 	switchKey := l.cfg.Switch.getSwitchKey()
 	chanID := fmt.Sprintf("%v", l.ShortChanID())

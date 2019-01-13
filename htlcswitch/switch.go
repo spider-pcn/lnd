@@ -1526,7 +1526,7 @@ func (s *Switch) htlcForwarder() {
 
 	defer func() {
 		s.blockEpochStream.Cancel()
-
+    debug_print("going to call link.Stop for all switch's links\n")
 		// Remove all links once we've been signalled for shutdown.
 		var linksToStop []ChannelLink
 		s.indexMtx.Lock()
@@ -1944,7 +1944,7 @@ func handleBatchFwdErrs(errChan chan error) {
 }
 
 func (s *Switch) logAggregateStatsFb() {
-  debug_print("in logAggregateStatsFb\n")
+  debug_print("in switch's logAggregateStatsFb\n")
   switchKey := s.getSwitchKey()
   fb := firego.New(FIREBASE_URL + EXP_NAME +
                       "/aggregateStats/attempted/" + switchKey, nil)
@@ -1956,12 +1956,14 @@ func (s *Switch) logAggregateStatsFb() {
 // Stop gracefully stops all active helper goroutines, then waits until they've
 // exited.
 func (s *Switch) Stop() error {
+  debug_print("switch.Stop\n")
 	if !atomic.CompareAndSwapInt32(&s.shutdown, 0, 1) {
 		log.Warn("Htlc Switch already stopped")
 		return errors.New("htlc switch already shutdown")
 	}
+
   if (LOG_FIREBASE) {
-    s.logAggregateStatsFb()
+    //s.logAggregateStatsFb()
   }
 
 	log.Infof("HTLC Switch shutting down")
