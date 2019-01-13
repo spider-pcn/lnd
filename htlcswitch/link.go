@@ -1360,9 +1360,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
       //l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
       //l.downstreamPathStatsLock.Unlock()
       // Method 3:
-      val := fmt.Sprintf("%x", htlc.PaymentHash[:])
+      //val := fmt.Sprintf("%x", htlc.PaymentHash[:])
       //l.downstreamFirebaseConnMutex.Lock()
-      debug_print(fmt.Sprintf("downstream val: %s\n", val))
+      //debug_print(fmt.Sprintf("downstream val: %s\n", val))
       //l.downstreamFirebaseConnMutex.Unlock()
     }
 
@@ -1608,9 +1608,9 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
       //l.upstreamPathStatsLock.Lock()
       //l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
       //l.upstreamPathStatsLock.Unlock()
-      val := fmt.Sprintf("%x", msg.PaymentHash[:])
+      //val := fmt.Sprintf("%x", msg.PaymentHash[:])
       //l.upstreamFirebaseConnMutex.Lock()
-      debug_print(fmt.Sprintf("upstream val: %s\n", val))
+      //debug_print(fmt.Sprintf("upstream val: %s\n", val))
       //l.upstreamFirebaseConnMutex.Unlock()
     }
 
@@ -2713,7 +2713,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
       if (LOG_FIREBASE) {
         // we do this in a new goroutine so this doesn't hold up the rest of
         // the lnd stuff from functioning
-        go func() {
+        //go func() {
           vals := make(map[string] string)
           vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
                                         int32(time.Now().Unix()))
@@ -2722,7 +2722,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
             debug_print("error when logging to firebase")
           }
           //l.successFirebaseConnMutex.Unlock()
-        }()
+        //}()
         //l.successtatsLock.Lock()
         //l.successtats[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
                             //int32(time.Now().Unix()))
