@@ -23,6 +23,8 @@ import (
 // spider imports
 import (
 	"gopkg.in/zabawaba99/firego.v1"
+  "os"
+  "strconv"
 )
 
 func init() {
@@ -407,6 +409,11 @@ func (l *channelLink) updateFirebase()  {
   fb := firego.New(FIREBASE_URL + EXP_NAME + "/channelStats/" + switchKey, nil)
 	i := 0
   var oldVals map[string] string = nil
+  EXP_TIME, err1 := strconv.Atoi(os.Getenv("EXP_TIME"))
+  if (err1 == nil) {
+    debug_print("could not read the $EXP_TIME environment variable\n")
+    return
+  }
 	for {
     debug_print(fmt.Sprintf("updateFirebase: i = %d\n", i))
 		// going to store queue information, for this particular channel.
@@ -450,13 +457,14 @@ func (l *channelLink) updateFirebase()  {
         }
       }
     }
-    if (new_data) {
+    if (new_data || i < EXP_TIME+5) {
+      debug_print("will send new data to firebase\n")
       if _, err := fb.Push(vals); err != nil {
         fmt.Println("error when logging to firebase")
       }
     } else {
       //l.logAggregateStatsFb()
-      debug_print("not logging to firebase because no changes\n")
+      debug_print("no new data to send to firebase\n")
     }
     oldVals = curVals
 		i += 1
