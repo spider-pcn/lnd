@@ -504,7 +504,7 @@ func (l *channelLink) Start() error {
     // success / failure percentages
     l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
                 "/aggregateStats/success/" + switchKey, nil)
-    l.successChan = make(chan string, 10)
+    l.successChan = make(chan string, 10000)
     go l.updateAggregateStatsFirebase()
 
     //l.downstreamFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +

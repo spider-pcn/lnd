@@ -1809,7 +1809,7 @@ func (s *Switch) Start() error {
     switchKey := s.getSwitchKey()
     s.firebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
                 "/aggregateStats/attempted/" + switchKey, nil)
-    s.attemptedChan = make (chan string, 10)
+    s.attemptedChan = make (chan string, 10000)
     go s.updateAggregateStatsFirebase()
   }
 
