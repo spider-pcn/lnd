@@ -410,7 +410,7 @@ func (l *channelLink) updateFirebase()  {
 	i := 0
   var oldVals map[string] string = nil
   EXP_TIME, err1 := strconv.Atoi(os.Getenv("EXP_TIME"))
-  if (err1 == nil) {
+  if (err1 != nil) {
     debug_print("could not read the $EXP_TIME environment variable\n")
     return
   }
