@@ -245,7 +245,7 @@ type channelLink struct {
 
   // long-lived firebase connections
   successFirebaseConn *firego.Firebase
-  successFirebaseConnMutex sync.Mutex
+  //successFirebaseConnMutex sync.Mutex
   successChan chan string
 
   //downstreamFirebaseConn *firego.Firebase
@@ -392,6 +392,7 @@ func (l *channelLink) updateAggregateStatsFirebase() {
     }
     vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
     if (len(vals) >= 10) {
+      debug_print("logging to firebase from link.go\n")
       if _, err := l.successFirebaseConn.Push(vals); err != nil {
         debug_print("error when logging to firebase")
       }
@@ -502,8 +503,6 @@ func (l *channelLink) Start() error {
 
     switchKey := l.cfg.Switch.getSwitchKey()
     // chanID := fmt.Sprintf("%v", l.ShortChanID())
-    //l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
-                //"/aggregateStats/success/" + switchKey + "/" + chanID, nil)
     // which channel we receive the payment on shouldn't matter for computing
     // success / failure percentages
     l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
