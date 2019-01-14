@@ -406,7 +406,7 @@ func (l *channelLink) updateFirebase()  {
 	chanID := fmt.Sprintf("%v", l.ShortChanID())
   fb := firego.New(FIREBASE_URL + EXP_NAME + "/channelStats/" + switchKey, nil)
 	i := 0
-  //oldDownstreamLen := 0
+  var oldVals map[string] string = nil
 	for {
     debug_print(fmt.Sprintf("updateFirebase: i = %d\n", i))
 		// going to store queue information, for this particular channel.
@@ -417,11 +417,11 @@ func (l *channelLink) updateFirebase()  {
 		sent := fmt.Sprintf("%v", snapshot.TotalMSatSent)
 		rcvd := fmt.Sprintf("%v", snapshot.TotalMSatReceived)
 		capacity := fmt.Sprintf("%v", snapshot.Capacity)
-		chainHash := fmt.Sprintf("%v", snapshot.ChainHash)
+		//chainHash := fmt.Sprintf("%v", snapshot.ChainHash)
 		locBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.LocalBalance)
 		remBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.RemoteBalance)
-		commitHt := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitHeight)
-		commitFee := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitFee)
+		//commitHt := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitHeight)
+		//commitFee := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitFee)
 		bandwidth := fmt.Sprintf("%v", l.Bandwidth())
 		curVals := make(map[string] string)
 		curVals["idx"] = fmt.Sprintf("%d", i)
@@ -430,26 +430,35 @@ func (l *channelLink) updateFirebase()  {
 		curVals["sent"] = sent
 		curVals["rcvd"] = rcvd
 		curVals["capacity"] = capacity
-		curVals["chainHash"] = chainHash
+		//curVals["chainHash"] = chainHash
 		curVals["locBal"] = locBal
 		curVals["remBal"] = remBal
-		curVals["commitHeight"] = commitHt
-		curVals["commitFee"] = commitFee
+		//curVals["commitHeight"] = commitHt
+		//curVals["commitFee"] = commitFee
 		curVals["bandwidth"] = bandwidth
 		// set it for uploading
 		vals[chanID] = curVals
-    go func () {
+    new_data := false
+    // check if this data is new
+    if (oldVals != nil) {
+      for k, v := range curVals {
+        if (k == "idx") {
+          continue
+        }
+        if (v != oldVals[k]) {
+          new_data = true
+        }
+      }
+    }
+    if (new_data) {
       if _, err := fb.Push(vals); err != nil {
         fmt.Println("error when logging to firebase")
       }
-    }()
-
-    //if (oldDownstreamLen != 0 && oldDownstreamLen ==
-                  //len(l.downstreamPathStats)) {
+    } else {
       //l.logAggregateStatsFb()
-    //}
-    //oldDownstreamLen = len(l.downstreamPathStats)
-
+      debug_print("not logging to firebase because no changes\n")
+    }
+    oldVals = curVals
 		i += 1
 		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
 	}
