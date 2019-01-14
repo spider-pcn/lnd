@@ -1795,7 +1795,7 @@ func (s *Switch) updateAggregateStatsFirebase() {
       if _, err := s.firebaseConn.Push(vals); err != nil {
         debug_print("error when logging to firebase")
       }
-      debug_print(fmt.Sprintf("elapsed time for logging to fb is: %d\n, ", time.Since(start)))
+      debug_print(fmt.Sprintf("elapsed time for logging to fb is: %s\n, ", time.Since(start)))
       vals = make(map[string] string)
     }
   }
