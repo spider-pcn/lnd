@@ -913,12 +913,6 @@ func (l *channelLink) htlcManager() {
 		l.wg.Done()
 		log.Infof("ChannelLink(%v) has exited", l)
 	}()
-  //defer func() {
-    //debug_print("in htlcManager's deferred func\n")
-    //if (LOG_FIREBASE) {
-      //l.logAggregateStatsFb()
-    //}
-  //}()
 
 	log.Infof("HTLC manager for ChannelPoint(%v) started, "+
 		"bandwidth=%v", l.channel.ChannelPoint(), l.Bandwidth())
@@ -1354,7 +1348,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			}
 		}
 
-    if (LOG_FIREBASE) {
+    //if (LOG_FIREBASE) {
       //go func() {
         // val := fmt.Sprintf("%x", htlc.PaymentHash[:])
         //l.downstreamFirebaseConnMutex.Lock()
@@ -1371,7 +1365,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
       //l.downstreamFirebaseConnMutex.Lock()
       //debug_print(fmt.Sprintf("downstream val: %s\n", val))
       //l.downstreamFirebaseConnMutex.Unlock()
-    }
+    //}
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
 			"local_log_index=%v, batch_size=%v",
@@ -1603,7 +1597,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			return
 		}
 
-    if (LOG_FIREBASE) {
+    //if (LOG_FIREBASE) {
       //go func() {
         //val := fmt.Sprintf("%x", msg.PaymentHash[:])
         //l.upstreamFirebaseConnMutex.Lock()
@@ -1619,7 +1613,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
       //l.upstreamFirebaseConnMutex.Lock()
       //debug_print(fmt.Sprintf("upstream val: %s\n", val))
       //l.upstreamFirebaseConnMutex.Unlock()
-    }
+    //}
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v", msg.PaymentHash[:], index)
@@ -2719,6 +2713,8 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			needUpdate = true
       if (LOG_FIREBASE) {
         // recording successful htlc payments
+        // Method 4: send it over channel to separate goroutine
+        l.successChan <- fmt.Sprintf("%x", pd.RHash)
 
         // we do this in a new goroutine so this doesn't hold up the rest of
         // the lnd stuff from functioning
@@ -2740,9 +2736,6 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
         //l.successFirebaseConnMutex.Lock()
         //debug_print(fmt.Sprintf("%v", vals))
         //l.successFirebaseConnMutex.Unlock()
-
-        // Method 4: send it over channel to separate goroutine
-        l.successChan <- fmt.Sprintf("%x", pd.RHash)
       }
 
       debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))

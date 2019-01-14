@@ -9,7 +9,7 @@ import (
 // FIXME: temporary until we can use the global flags
 var SPIDER_FLAG bool = os.Getenv("SPIDER_QUEUE") == "1"
 
-var DEBUG_FLAG bool = true
+var DEBUG_FLAG bool = false
 var LOG_FIREBASE bool = os.Getenv("SPIDER_LOG_FIREBASE") == "1"
 var FIREBASE_URL string = "https://spider2.firebaseio.com/"
 
