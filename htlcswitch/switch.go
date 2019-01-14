@@ -200,6 +200,7 @@ type Switch struct {
   // using streaming firebase connection
   firebaseConn *firego.Firebase
   firebaseMutex sync.Mutex
+  attemptedChan chan string
 
 	started  int32 // To be used atomically.
 	shutdown int32 // To be used atomically.
@@ -398,14 +399,14 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
     //s.sentHtlcMutex.Unlock()
     /// Method 2:
     //go func() {
-      vals := make(map[string] string)
-      vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
-                                    int32(time.Now().Unix()))
-      s.firebaseMutex.Lock()
-      if _, err := s.firebaseConn.Push(vals); err != nil {
-        debug_print("error when logging to firebase")
-      }
-      s.firebaseMutex.Unlock()
+      //vals := make(map[string] string)
+      //vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
+                                    //int32(time.Now().Unix()))
+      //s.firebaseMutex.Lock()
+      //if _, err := s.firebaseConn.Push(vals); err != nil {
+        //debug_print("error when logging to firebase")
+      //}
+      //s.firebaseMutex.Unlock()
     //}()
     /// Method 3:
     //vals := make(map[string] string)
@@ -414,6 +415,9 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
     //s.firebaseMutex.Lock()
     //debug_print(fmt.Sprintf("%v", vals))
     //s.firebaseMutex.Unlock()
+
+    // method 4: channels
+    s.attemptedChan <- fmt.Sprintf("%x", htlc.PaymentHash)
   }
 
 	// Before sending, double check that we don't already have 1) an
@@ -1779,6 +1783,20 @@ out:
 	}
 }
 
+func (s *Switch) updateAggregateStatsFirebase() {
+  for {
+    htlcHash, valid := <-s.attemptedChan
+    if (!valid) {
+      break
+    }
+    vals := make(map[string] string)
+    vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+    if _, err := s.firebaseConn.Push(vals); err != nil {
+      debug_print("error when logging to firebase")
+    }
+  }
+}
+
 // Start starts all helper goroutines required for the operation of the switch.
 func (s *Switch) Start() error {
 	if !atomic.CompareAndSwapInt32(&s.started, 0, 1) {
@@ -1791,6 +1809,8 @@ func (s *Switch) Start() error {
     switchKey := s.getSwitchKey()
     s.firebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
                 "/aggregateStats/attempted/" + switchKey, nil)
+    s.attemptedChan = make (chan string, 10)
+    go s.updateAggregateStatsFirebase()
   }
 
 	log.Infof("Starting HTLC Switch")
