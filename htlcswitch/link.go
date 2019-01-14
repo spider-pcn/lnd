@@ -384,16 +384,19 @@ func (l *channelLink) logAggregateStatsFb()  {
 }
 
 func (l *channelLink) updateAggregateStatsFirebase() {
+  vals := make(map[string] string)
   for {
     htlcHash, valid := <-l.successChan
     if (!valid) {
       break
     }
-    vals := make(map[string] string)
     vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-    //if _, err := l.successFirebaseConn.Push(vals); err != nil {
-      //debug_print("error when logging to firebase")
-    //}
+    if (len(vals) >= 10) {
+      if _, err := l.successFirebaseConn.Push(vals); err != nil {
+        debug_print("error when logging to firebase")
+      }
+      vals = make(map[string] string)
+    }
   }
 }
 
@@ -496,6 +499,7 @@ func (l *channelLink) Start() error {
 
 	if (LOG_FIREBASE) {
 		go l.updateFirebase()
+
     switchKey := l.cfg.Switch.getSwitchKey()
     // chanID := fmt.Sprintf("%v", l.ShortChanID())
     //l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +

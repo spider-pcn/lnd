@@ -1782,16 +1782,19 @@ out:
 }
 
 func (s *Switch) updateAggregateStatsFirebase() {
+  vals := make(map[string] string)
   for {
     htlcHash, valid := <-s.attemptedChan
     if (!valid) {
       break
     }
-    vals := make(map[string] string)
     vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-    //if _, err := s.firebaseConn.Push(vals); err != nil {
-      //debug_print("error when logging to firebase")
-    //}
+    if (len(vals) >= 10) {
+      if _, err := s.firebaseConn.Push(vals); err != nil {
+        debug_print("error when logging to firebase")
+      }
+      vals = make(map[string] string)
+    }
   }
 }
 
@@ -1804,9 +1807,11 @@ func (s *Switch) Start() error {
 
   if (LOG_FIREBASE) {
     //s.sentHtlc = make(map[string] string)
-    switchKey := s.getSwitchKey()
-    s.firebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
-                "/aggregateStats/attempted/" + switchKey, nil)
+
+    // method 2:
+    //switchKey := s.getSwitchKey()
+    //s.firebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                //"/aggregateStats/attempted/" + switchKey, nil)
     s.attemptedChan = make (chan string, 10000)
     go s.updateAggregateStatsFirebase()
   }
