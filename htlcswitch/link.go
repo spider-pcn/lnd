@@ -391,9 +391,9 @@ func (l *channelLink) updateAggregateStatsFirebase() {
     }
     vals := make(map[string] string)
     vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-    if _, err := l.successFirebaseConn.Push(vals); err != nil {
-      debug_print("error when logging to firebase")
-    }
+    //if _, err := l.successFirebaseConn.Push(vals); err != nil {
+      //debug_print("error when logging to firebase")
+    //}
   }
 }
 

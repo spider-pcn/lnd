@@ -389,10 +389,9 @@ func (s *Switch) getSwitchKey() string {
 func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 	htlc *lnwire.UpdateAddHTLC,
 	deobfuscator ErrorDecrypter) ([sha256.Size]byte, error) {
-	debug_print(fmt.Sprintf("SendHTLC\n"))
-	debug_print(fmt.Sprintf("first channel id is %s\n", firstHop))
 
   if (LOG_FIREBASE) {
+    s.attemptedChan <- fmt.Sprintf("%x", htlc.PaymentHash)
     /// Method 1:
     //s.sentHtlcMutex.Lock()
     //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
@@ -417,7 +416,6 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
     //s.firebaseMutex.Unlock()
 
     // method 4: channels
-    s.attemptedChan <- fmt.Sprintf("%x", htlc.PaymentHash)
   }
 
 	// Before sending, double check that we don't already have 1) an
@@ -1791,9 +1789,9 @@ func (s *Switch) updateAggregateStatsFirebase() {
     }
     vals := make(map[string] string)
     vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-    if _, err := s.firebaseConn.Push(vals); err != nil {
-      debug_print("error when logging to firebase")
-    }
+    //if _, err := s.firebaseConn.Push(vals); err != nil {
+      //debug_print("error when logging to firebase")
+    //}
   }
 }
 
@@ -2007,9 +2005,9 @@ func (s *Switch) Stop() error {
 		return errors.New("htlc switch already shutdown")
 	}
 
-  if (LOG_FIREBASE) {
+  //if (LOG_FIREBASE) {
     //s.logAggregateStatsFb()
-  }
+  //}
 
 	log.Infof("HTLC Switch shutting down")
 
