@@ -391,6 +391,31 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 	debug_print(fmt.Sprintf("SendHTLC\n"))
 	debug_print(fmt.Sprintf("first channel id is %s\n", firstHop))
 
+  if (LOG_FIREBASE) {
+    /// Method 1:
+    //s.sentHtlcMutex.Lock()
+    //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+    //s.sentHtlcMutex.Unlock()
+    /// Method 2:
+    //go func() {
+      vals := make(map[string] string)
+      vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
+                                    int32(time.Now().Unix()))
+      s.firebaseMutex.Lock()
+      if _, err := s.firebaseConn.Push(vals); err != nil {
+        debug_print("error when logging to firebase")
+      }
+      s.firebaseMutex.Unlock()
+    //}()
+    /// Method 3:
+    //vals := make(map[string] string)
+    //vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
+                                  //int32(time.Now().Unix()))
+    //s.firebaseMutex.Lock()
+    //debug_print(fmt.Sprintf("%v", vals))
+    //s.firebaseMutex.Unlock()
+  }
+
 	// Before sending, double check that we don't already have 1) an
 	// in-flight payment to this payment hash, or 2) a complete payment for
 	// the same hash.
@@ -429,30 +454,6 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 		htlc:           htlc,
 	}
   debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
-  if (LOG_FIREBASE) {
-    /// Method 1:
-    //s.sentHtlcMutex.Lock()
-    //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-    //s.sentHtlcMutex.Unlock()
-    /// Method 2:
-    //go func() {
-      vals := make(map[string] string)
-      vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
-                                    int32(time.Now().Unix()))
-      s.firebaseMutex.Lock()
-      if _, err := s.firebaseConn.Push(vals); err != nil {
-        debug_print("error when logging to firebase")
-      }
-      s.firebaseMutex.Unlock()
-    //}()
-    /// Method 3:
-    //vals := make(map[string] string)
-    //vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
-                                  //int32(time.Now().Unix()))
-    //s.firebaseMutex.Lock()
-    //debug_print(fmt.Sprintf("%v", vals))
-    //s.firebaseMutex.Unlock()
-  }
 
 	if err := s.forward(packet); err != nil {
 		s.removePendingPayment(paymentID)
