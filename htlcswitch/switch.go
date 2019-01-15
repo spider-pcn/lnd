@@ -24,9 +24,9 @@ import (
 	"os"
 )
 // spider imports
-import (
-  "gopkg.in/zabawaba99/firego.v1"
-)
+//import (
+  //"gopkg.in/zabawaba99/firego.v1"
+//)
 
 const (
 	// DefaultFwdEventInterval is the duration between attempts to flush
