@@ -198,9 +198,9 @@ type Switch struct {
   // need to protect it with a mutex
 	//sentHtlcMutex sync.Mutex
   // using streaming firebase connection
-  firebaseConn *firego.Firebase
-  firebaseMutex sync.Mutex
-  attemptedChan chan string
+  //firebaseConn *firego.Firebase
+  //firebaseMutex sync.Mutex
+  //attemptedChan chan string
 
 	started  int32 // To be used atomically.
 	shutdown int32 // To be used atomically.
@@ -391,7 +391,9 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 	deobfuscator ErrorDecrypter) ([sha256.Size]byte, error) {
 
   if (LOG_FIREBASE) {
-    s.attemptedChan <- fmt.Sprintf("%x", htlc.PaymentHash)
+    // Latest method:
+    //s.attemptedChan <- fmt.Sprintf("%x", htlc.PaymentHash)
+
     /// Method 1:
     //s.sentHtlcMutex.Lock()
     //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
@@ -1781,25 +1783,25 @@ out:
 	}
 }
 
-func (s *Switch) updateAggregateStatsFirebase() {
-  vals := make(map[string] string)
-  for {
-    htlcHash, valid := <-s.attemptedChan
-    if (!valid) {
-      break
-    }
-    vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-    if (len(vals) >= 10) {
-      debug_print("logging to firebase from switch\n")
-      start := time.Now()
-      if _, err := s.firebaseConn.Push(vals); err != nil {
-        debug_print("error when logging to firebase")
-      }
-      debug_print(fmt.Sprintf("elapsed time for logging to fb is: %s\n, ", time.Since(start)))
-      vals = make(map[string] string)
-    }
-  }
-}
+//func (s *Switch) updateAggregateStatsFirebase() {
+  //vals := make(map[string] string)
+  //for {
+    //htlcHash, valid := <-s.attemptedChan
+    //if (!valid) {
+      //break
+    //}
+    //vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+    //if (len(vals) >= 10) {
+      //debug_print("logging to firebase from switch\n")
+      //start := time.Now()
+      //if _, err := s.firebaseConn.Push(vals); err != nil {
+        //debug_print("error when logging to firebase")
+      //}
+      //debug_print(fmt.Sprintf("elapsed time for logging to fb is: %s\n, ", time.Since(start)))
+      //vals = make(map[string] string)
+    //}
+  //}
+//}
 
 // Start starts all helper goroutines required for the operation of the switch.
 func (s *Switch) Start() error {
@@ -1812,11 +1814,11 @@ func (s *Switch) Start() error {
     //s.sentHtlc = make(map[string] string)
 
     // method 2:
-    switchKey := s.getSwitchKey()
-    s.firebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
-                "/aggregateStats/attempted/" + switchKey, nil)
-    s.attemptedChan = make (chan string, 10000)
-    go s.updateAggregateStatsFirebase()
+    //switchKey := s.getSwitchKey()
+    //s.firebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                //"/aggregateStats/attempted/" + switchKey, nil)
+    //s.attemptedChan = make (chan string, 10000)
+    //go s.updateAggregateStatsFirebase()
   }
 
 	log.Infof("Starting HTLC Switch")
