@@ -49,6 +49,7 @@ const (
 	off          = iota
 	ShortestPath = iota
 	Waterfilling = iota
+	LP           = iota
 )
 
 var (
@@ -1825,7 +1826,40 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			log.Errorf("Probe didn't compelete in time or some error in retreiving probe info")
 			return [32]byte{}, nil, errors.New("Probe information unavailable for destination")
 		}
+	
+	case LP:
+		// Route payments using LP pricing model.
+		// The payment is placed into a queue for this specific
+		// destination. A separate goroutine will subscribe to the
+		// queue and process them on a FCFS basis.
 
+		dest := NewVertex(payment.Target)
+
+		// create LPPayment struct that we will add to the queue
+		LPPay := LPPayment {
+			payment: payment
+			completed: make(chan int)
+		}
+		// Try to access (or create) the corresponding queue.
+		// First, lock the dest-queue map.
+		r.missionControl.paymentQueueMutex.Lock()
+		if q, exists := r.missionControl.paymentQueuePerDest[dest]; exists {
+			// if the queue is there, just add to the queue
+			q <- LPPay
+		} else {
+			// if the queue is not there, create a queue and start
+			// a goroutine to handle this queue (destiniation)
+			// TODO(leiy): implement and start the goroutine
+			r.missionControl.paymentQueuePerDest[dest] = make(chan LPPayment)
+			r.missionControl.paymentQueuePerDest[dest] <- LPPay
+		}
+		// unlock the dest-queue map
+		r.missionControl.paymentQueueMutex.Unlock()
+
+		// then we just block on the completed channel and wait for results
+		payRes := <-LPPay.completed
+
+		// TODO(leiy): react to payment results
 	}
 
 	return [32]byte{}, nil, nil

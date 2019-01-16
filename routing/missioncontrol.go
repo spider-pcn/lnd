@@ -78,6 +78,11 @@ type missionControl struct {
 	// This helps control the probes in flight and ends them when there ar eno further outstanding
 	// payments
 	paymentsPerDest sync.Map
+
+	// paymentQueuePerDest maps destination to a go channel representing
+	// a queue of pending transactions to that specific destination.
+	paymentQueuePerDest map[Vertex](chan LPPayment)
+	paymentQueueMutex *sync.Mutex
 }
 
 type RouteInfo struct {
@@ -86,6 +91,14 @@ type RouteInfo struct {
 	minBalance  lnwire.MilliSatoshi
 	lastUpdated time.Time
 	isEmpty     bool
+}
+
+// LPPayment represents a pending LP payment.
+type LPPayment struct {
+	payment     LightningPayment	// The LightningPayment struct
+	completed   chan int		// Channel to notify the SendSpider
+					// invocation thad added this payment
+					// to the queue. 0 means succeeded.
 }
 
 // newMissionControl returns a new instance of missionControl.
@@ -100,6 +113,9 @@ func newMissionControl(g *channeldb.ChannelGraph, selfNode *channeldb.LightningN
 		selfNode:       selfNode,
 		queryBandwidth: qb,
 		graph:          g,
+		paymentQueueMutex: &sync.Mutex{}
+		paymentQueuePerDest: make(map[Vertex](chan LPPayment))
+
 	}
 }
 
