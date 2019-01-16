@@ -1047,6 +1047,7 @@ out:
 			isChanUpdate = true
 			targetChan = msg.ChanID
 		case *lnwire.UpdatePriceProbe:
+			debug_print("peer.go UpdatePriceProbe\n")
 			isChanUpdate = true
 			targetChan = msg.ChanID
 		case *lnwire.UpdateFulfillHTLC:
@@ -2149,6 +2150,7 @@ func (p *peer) SendMessage(sync bool, msgs ...lnwire.Message) error {
 	// Add all incoming messages to the outgoing queue. A list of error
 	// chans is populated for each message if the caller requested a sync
 	// send.
+	debug_print("in SendMessage!\n")
 	var errChans []chan error
 	for _, msg := range msgs {
 		// If a sync send was requested, create an error chan to listen

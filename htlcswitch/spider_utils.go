@@ -20,7 +20,7 @@ var SPIDER_QUEUE_LENGTH_SCALE int = 8
 var FILENAME string = "./log_test.txt"
 var EXP_NAME string = os.Getenv("SPIDER_EXP_NAME")
 // time in ms
-var UPDATE_INTERVAL int = 1000
+var UPDATE_INTERVAL int = 5000
 
 func hash(s string) uint32 {
         h := fnv.New32a()
