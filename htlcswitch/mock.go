@@ -494,6 +494,8 @@ func (s *mockServer) readHandler(message lnwire.Message) error {
 	switch msg := message.(type) {
 	case *lnwire.UpdateAddHTLC:
 		targetChan = msg.ChanID
+	case *lnwire.UpdatePriceProbe:
+		targetChan = msg.ChanID
 	case *lnwire.UpdateFulfillHTLC:
 		targetChan = msg.ChanID
 	case *lnwire.UpdateFailHTLC:

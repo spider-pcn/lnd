@@ -255,6 +255,9 @@ type channelLink struct {
   //upstreamFirebaseConn *firego.Firebase
   //upstreamFirebaseConnMutex sync.Mutex
 
+	// lp routing
+	x_local int32
+
 	// The following fields are only meant to be used *atomically*
 	started  int32
 	shutdown int32
@@ -403,6 +406,23 @@ func NewChannelLink(cfg ChannelLinkConfig,
   //}
 //}
 
+func (l *channelLink) periodicUpdatePriceProbe()  {
+	for {
+
+		msg := &lnwire.UpdatePriceProbe {
+			ChanID: l.ChanID(),
+			X_Remote : l.x_local,
+		}
+		debug_print("going to send update price probe to peer!\n")
+
+		if err := l.cfg.Peer.SendMessage(true, msg); err != nil {
+			debug_print("periodicUpdatePriceProbe failed!\n")
+		}
+		// send latest value of x_local to peer
+		time.Sleep(time.Duration(LP_INTERVAL) * time.Millisecond)
+	}
+}
+
 func (l *channelLink) updateFirebase()  {
 	switchKey := l.cfg.Switch.getSwitchKey()
 	chanID := fmt.Sprintf("%v", l.ShortChanID())
@@ -535,6 +555,11 @@ func (l *channelLink) Start() error {
                 //"/paths/upstream/" + switchKey + "/" + chanID, nil)
     //l.upstreamPathStats = make([]string, 0)
     //l.downstreamPathStats = make([]string, 0)
+	}
+
+	if (LP_ROUTING) {
+		go l.periodicUpdatePriceProbe()
+		l.x_local = 0
 	}
 
 	log.Infof("ChannelLink(%v) is starting", l)
@@ -1641,6 +1666,8 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			"assigning index: %v", msg.PaymentHash[:], index)
 		debug_print(fmt.Sprintf("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v\n", msg.PaymentHash[:], index))
+	case *lnwire.UpdatePriceProbe:
+		debug_print("got update price probe!!!!\n")
 
 	case *lnwire.UpdateFulfillHTLC:
 		debug_print(fmt.Sprintf("UpdateFulfillHTLC in chan: %s\n", l.shortChanID))
