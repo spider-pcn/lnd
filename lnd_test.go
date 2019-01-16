@@ -12806,7 +12806,10 @@ func TestLightningNetworkDaemon(t *testing.T) {
 	}
 
 	t.Logf("Running %v integration tests", len(testsCases))
-	for _, testCase := range testsCases {
+	for i, testCase := range testsCases {
+		if i != 0  {
+			continue;
+		}
 		logLine := fmt.Sprintf("STARTING ============ %v ============\n",
 			testCase.name)
 

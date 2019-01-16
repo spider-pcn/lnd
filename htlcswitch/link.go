@@ -20,6 +20,12 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/ticker"
 )
+// spider imports
+import (
+	"gopkg.in/zabawaba99/firego.v1"
+  "os"
+  "strconv"
+)
 
 func init() {
 	prand.Seed(time.Now().UnixNano())
@@ -234,6 +240,21 @@ type ChannelLinkConfig struct {
 // switch. Additionally, the link encapsulate logic of commitment protocol
 // message ordering and updates.
 type channelLink struct {
+  //downstreamPathStats []string
+  //downstreamPathStatsLock sync.Mutex
+  //upstreamPathStats []string
+  //upstreamPathStatsLock sync.Mutex
+
+  // long-lived firebase connections
+  //successFirebaseConn *firego.Firebase
+  //successFirebaseConnMutex sync.Mutex
+  //successChan chan string
+
+  //downstreamFirebaseConn *firego.Firebase
+  //downstreamFirebaseConnMutex sync.Mutex
+  //upstreamFirebaseConn *firego.Firebase
+  //upstreamFirebaseConnMutex sync.Mutex
+
 	// The following fields are only meant to be used *atomically*
 	started  int32
 	shutdown int32
@@ -331,15 +352,147 @@ type channelLink struct {
 func NewChannelLink(cfg ChannelLinkConfig,
 	channel *lnwallet.LightningChannel) ChannelLink {
 
+	maxHTLC := lnwallet.MaxHTLCNumber
+
 	return &channelLink{
 		cfg:         cfg,
 		channel:     channel,
 		shortChanID: channel.ShortChanID(),
 		// TODO(roasbeef): just do reserve here?
 		logCommitTimer: time.NewTimer(300 * time.Millisecond),
-		overflowQueue:  newPacketQueue(lnwallet.MaxHTLCNumber / 2),
+		overflowQueue:  newPacketQueue(maxHTLC/2, int32(maxHTLC*SPIDER_QUEUE_LENGTH_SCALE)),
 		htlcUpdates:    make(chan []channeldb.HTLC),
 		quit:           make(chan struct{}),
+	}
+}
+
+//func (l *channelLink) logAggregateStatsFb()  {
+  //debug_print("in link's logAggregateStatsFb\n")
+  //// FIXME: don't need to make new arrays here
+	//switchKey := l.cfg.Switch.getSwitchKey()
+	//chanID := fmt.Sprintf("%v", l.ShortChanID())
+  //fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
+                              //switchKey + "/"+ chanID + "/upstream/", nil)
+  //fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
+                              //switchKey + "/"+ chanID + "/downstream/", nil)
+
+  //// statistics for generating paths
+  //if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
+    //debug_print("error when logging upstream paths to firebase")
+  //}
+  //if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
+    //debug_print("error when logging upstream paths to firebase")
+  //}
+//}
+
+//func (l *channelLink) updateAggregateStatsFirebase() {
+  //vals := make(map[string] string)
+  //for {
+    //htlcHash, valid := <-l.successChan
+    //if (!valid) {
+      //break
+    //}
+    //vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+    //if (len(vals) >= 10) {
+      //debug_print("logging to firebase from link.go\n")
+      //if _, err := l.successFirebaseConn.Push(vals); err != nil {
+        //debug_print("error when logging to firebase")
+      //}
+      //vals = make(map[string] string)
+    //}
+  //}
+//}
+
+func (l *channelLink) updateFirebase()  {
+	switchKey := l.cfg.Switch.getSwitchKey()
+	chanID := fmt.Sprintf("%v", l.ShortChanID())
+  fb := firego.New(FIREBASE_URL + EXP_NAME + "/channelStats/" + switchKey, nil)
+	i := 0
+  var oldVals map[string] string = nil
+  EXP_TIME, err1 := strconv.Atoi(os.Getenv("EXP_TIME"))
+  if (err1 != nil) {
+    debug_print("could not read the $EXP_TIME environment variable\n")
+    return
+  }
+	for {
+    debug_print(fmt.Sprintf("updateFirebase: i = %d\n", i))
+		// going to store queue information, for this particular channel.
+		vals := make(map[string] map[string] string)
+		qlen := fmt.Sprintf("%d", l.overflowQueue.Length())
+		totalAmt := fmt.Sprintf("%v", l.overflowQueue.TotalHtlcAmount())
+		snapshot := l.channel.StateSnapshot()
+		sent := fmt.Sprintf("%v", snapshot.TotalMSatSent)
+		rcvd := fmt.Sprintf("%v", snapshot.TotalMSatReceived)
+		capacity := fmt.Sprintf("%v", snapshot.Capacity)
+		//chainHash := fmt.Sprintf("%v", snapshot.ChainHash)
+		locBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.LocalBalance)
+		remBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.RemoteBalance)
+		//commitHt := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitHeight)
+		//commitFee := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitFee)
+		bandwidth := fmt.Sprintf("%v", l.Bandwidth())
+		curVals := make(map[string] string)
+		curVals["idx"] = fmt.Sprintf("%d", i)
+		curVals["qlen"] = qlen
+		curVals["qTotalAmt"] = totalAmt
+		curVals["sent"] = sent
+		curVals["rcvd"] = rcvd
+		curVals["capacity"] = capacity
+		//curVals["chainHash"] = chainHash
+		curVals["locBal"] = locBal
+		curVals["remBal"] = remBal
+		//curVals["commitHeight"] = commitHt
+		//curVals["commitFee"] = commitFee
+		curVals["bandwidth"] = bandwidth
+		// set it for uploading
+		vals[chanID] = curVals
+    new_data := false
+    // check if this data is new
+    if (oldVals != nil) {
+      for k, v := range curVals {
+        if (k == "idx") {
+          continue
+        }
+        if (v != oldVals[k]) {
+          new_data = true
+        }
+      }
+    }
+    if (new_data || i < EXP_TIME+5) {
+      debug_print("will send new data to firebase\n")
+      if _, err := fb.Push(vals); err != nil {
+        fmt.Println("error when logging to firebase")
+      }
+    } else {
+      //l.logAggregateStatsFb()
+      debug_print("no new data to send to firebase\n")
+    }
+    oldVals = curVals
+		i += 1
+		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
+	}
+}
+
+// This will just periodically check if the minimum amount to be sent from the
+// Queue is lower than the available balance, and then wake up the queue.
+func (l *channelLink) startQueueWatcher() {
+	// infinite loop.
+	for {
+		channelAmt := l.channel.AvailableBalance()
+		minOverflowAmt := l.overflowQueue.MinHtlcAmount()
+		// CHECK: is it enough to check that number of inflight htlc's are below
+		// threshold to signal to overflow queue? Should be the correct behaviour
+		// even if this makes us exceed MaxHTLCNumber for inflight htlc's as after
+		// popping the HTLC off the queue, all those relevant checks will be
+		// performed again, and if anything fails, the HTLC will be added back to
+		// the queue.
+		if (channelAmt > minOverflowAmt && minOverflowAmt != 0) {
+						debug_print(fmt.Sprintf("in startQueueWatcher, chanID: %s, channelAmt: %d, minOverflowAmt: %d\n", l.channel.ShortChanID(), channelAmt, minOverflowAmt));
+			// if no items in the queue, will not have any effect.
+			debug_print(fmt.Sprintf("signaling to the overflow queue, for channel\n: %s\n", l.shortChanID))
+			debug_print(fmt.Sprintf("current queue len at this node is: %d\n", l.overflowQueue.queueLen))
+			l.overflowQueue.SignalFreeSlot()
+		}
+		time.Sleep(500*time.Millisecond)
 	}
 }
 
@@ -356,6 +509,32 @@ func (l *channelLink) Start() error {
 		err := errors.Errorf("channel link(%v): already started", l)
 		log.Warn(err)
 		return err
+	}
+
+	if (SPIDER_FLAG) {
+		go l.startQueueWatcher()
+	}
+
+	if (LOG_FIREBASE) {
+		go l.updateFirebase()
+
+    //switchKey := l.cfg.Switch.getSwitchKey()
+    // chanID := fmt.Sprintf("%v", l.ShortChanID())
+
+    // which channel we receive the payment on shouldn't matter for computing
+    // success / failure percentages
+    //l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                //"/aggregateStats/success/" + switchKey, nil)
+    //l.successChan = make(chan string, 10000)
+    //go l.updateAggregateStatsFirebase()
+
+    // for paths:
+    //l.downstreamFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                //"/paths/downstream/" + switchKey + "/" + chanID, nil)
+    //l.upstreamFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                //"/paths/upstream/" + switchKey + "/" + chanID, nil)
+    //l.upstreamPathStats = make([]string, 0)
+    //l.downstreamPathStats = make([]string, 0)
 	}
 
 	log.Infof("ChannelLink(%v) is starting", l)
@@ -759,6 +938,8 @@ func (l *channelLink) htlcManager() {
 
 	log.Infof("HTLC manager for ChannelPoint(%v) started, "+
 		"bandwidth=%v", l.channel.ChannelPoint(), l.Bandwidth())
+	debug_print(fmt.Sprintf("HTLC manager for ChannelPoint(%v) started, "+
+		"bandwidth=%v\n", l.channel.ChannelPoint(), l.Bandwidth()))
 
 	// TODO(roasbeef): need to call wipe chan whenever D/C?
 
@@ -844,7 +1025,6 @@ func (l *channelLink) htlcManager() {
 	// resynchronization have taken affect, causing us only to pull unacked
 	// packets after starting to read from the downstream mailbox.
 	l.mailBox.ResetPackets()
-
 	// After cleaning up any memory pertaining to incoming packets, we now
 	// replay our forwarding packages to handle any htlcs that can be
 	// processed locally, or need to be forwarded out to the switch. We will
@@ -853,6 +1033,7 @@ func (l *channelLink) htlcManager() {
 	// reforward.
 	if l.ShortChanID() != sourceHop {
 		if err := l.resolveFwdPkgs(); err != nil {
+			debug_print(fmt.Sprintf("shortChanID != sourceHop error\n"))
 			l.fail(LinkFailureError{code: ErrInternalError},
 				"unable to resolve fwd pkgs: %v", err)
 			return
@@ -864,20 +1045,23 @@ func (l *channelLink) htlcManager() {
 		l.wg.Add(1)
 		go l.fwdPkgGarbager()
 	}
-
 out:
 	for {
 		// We must always check if we failed at some point processing
 		// the last update before processing the next.
 		if l.failed {
+			debug_print(fmt.Sprintf("l.failed\n"))
 			l.errorf("link failed, exiting htlcManager")
 			break out
 		}
-
+		debug_print(fmt.Sprintf("OFL, ID: %s\n", l.shortChanID))
+		//debug_print(fmt.Sprintf("before handling out-for loop\n. l.chanID is:
+		//%s\n ", l.ChanID()));
 		select {
 		// Our update fee timer has fired, so we'll check the network
 		// fee to see if we should adjust our commitment fee.
 		case <-l.updateFeeTimer.C:
+			debug_print(fmt.Sprintf("l.updateFeeTimer\n"))
 			l.updateFeeTimer.Reset(l.randomFeeUpdateTimeout())
 
 			// If we're not the initiator of the channel, don't we
@@ -916,6 +1100,7 @@ out:
 		//
 		// TODO(roasbeef): add force closure? also breach?
 		case <-l.cfg.ChainEvents.RemoteUnilateralClosure:
+			debug_print(fmt.Sprintf("ChainEvents\n"))
 			log.Warnf("Remote peer has closed ChannelPoint(%v) on-chain",
 				l.channel.ChannelPoint())
 
@@ -931,6 +1116,7 @@ out:
 			break out
 
 		case <-l.logCommitTick:
+			debug_print(fmt.Sprintf("logCommitTick\n"))
 			// If we haven't sent or received a new commitment
 			// update in some time, check to see if we have any
 			// pending updates we need to commit due to our
@@ -970,9 +1156,12 @@ out:
 		// we'll attempt to re-process the packet in order to allow it
 		// to continue propagating within the network.
 		case packet := <-l.overflowQueue.outgoingPkts:
+			debug_print(fmt.Sprintf("pkt <- overflowQueue.outgoingPkts\n"))
 			msg := packet.htlc.(*lnwire.UpdateAddHTLC)
 			log.Tracef("Reprocessing downstream add update "+
 				"with payment hash(%x)", msg.PaymentHash[:])
+			debug_print(fmt.Sprintf("Reprocessing downstream add update "+
+				"with payment hash(%x)", msg.PaymentHash[:]))
 
 			l.handleDownStreamPkt(packet, true)
 
@@ -987,17 +1176,26 @@ out:
 		// that the link is an intermediate hop in a multi-hop HTLC
 		// circuit.
 		case pkt := <-l.downstream:
+			debug_print(fmt.Sprintf("pkt <- l.downstream\n"))
+			debug_print(fmt.Sprintf("ID: %s\n", l.shortChanID))
 			// If we have non empty processing queue then we'll add
 			// this to the overflow rather than processing it
 			// directly. Once an active HTLC is either settled or
 			// failed, then we'll free up a new slot.
 			htlc, ok := pkt.htlc.(*lnwire.UpdateAddHTLC)
-			if ok && l.overflowQueue.Length() != 0 {
+			// spider: overflowQueue might have stuff that we did not have enough to
+			// pay for, but we may still be able to service this request.
+			if ok && l.overflowQueue.Length() != 0 && !SPIDER_FLAG {
 				log.Infof("Downstream htlc add update with "+
 					"payment hash(%x) have been added to "+
 					"reprocessing queue, batch_size=%v",
 					htlc.PaymentHash[:],
 					l.batchCounter)
+				debug_print(fmt.Sprintf("Downstream htlc add update with "+
+					"payment hash(%x) have been added to "+
+					"reprocessing queue, batch_size=%v",
+					htlc.PaymentHash[:],
+					l.batchCounter))
 
 				l.overflowQueue.AddPkt(pkt)
 				continue
@@ -1016,12 +1214,16 @@ out:
 		// indicates that we have a new incoming HTLC, either directly
 		// for us, or part of a multi-hop HTLC circuit.
 		case msg := <-l.upstream:
+			debug_print(fmt.Sprintf("pkt <- l.upstream\n"))
+			debug_print(fmt.Sprintf("ID: %s\n", l.shortChanID))
 			l.handleUpstreamMsg(msg)
 
 		case <-l.quit:
+			debug_print(fmt.Sprintf("pkt <- l.quit\n"))
 			break out
 		}
 	}
+  debug_print("link: break out\n")
 }
 
 // randomFeeUpdateTimeout returns a random timeout between the bounds defined
@@ -1040,9 +1242,11 @@ func (l *channelLink) randomFeeUpdateTimeout() time.Duration {
 //
 // TODO(roasbeef): add sync ntfn to ensure switch always has consistent view?
 func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
+	debug_print(fmt.Sprintf("handleDownstreamPkt\n"))
 	var isSettle bool
 	switch htlc := pkt.htlc.(type) {
 	case *lnwire.UpdateAddHTLC:
+		debug_print(fmt.Sprintf("lnwire updateAddHTLC\n"))
 		// If hodl.AddOutgoing mode is active, we exit early to simulate
 		// arbitrary delays between the switch adding an ADD to the
 		// mailbox, and the HTLC being added to the commitment state.
@@ -1059,6 +1263,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		openCircuitRef := pkt.inKey()
 		index, err := l.channel.AddHTLC(htlc, &openCircuitRef)
 		if err != nil {
+			//debug_print(fmt.Sprintf("error in handleDownstream! \n"))
 			switch err {
 
 			// The channels spare bandwidth is fully allocated, so
@@ -1069,9 +1274,26 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 					"reprocessing queue, batch: %v",
 					htlc.PaymentHash[:],
 					l.batchCounter)
+				debug_print(fmt.Sprintf("Downstream htlc add update with "+
+					"payment hash(%x) have been added to "+
+					"reprocessing queue, batch: %v",
+					htlc.PaymentHash[:],
+					l.batchCounter))
 
 				l.overflowQueue.AddPkt(pkt)
 				return
+			case lnwallet.ErrBelowChanReserve:
+				// CHECK: if the flag is off, then will just fall through to the default case.
+				if (SPIDER_FLAG) {
+					debug_print(fmt.Sprintf("Downstream htlc add update with "+
+						"payment hash(%x) have been added to "+
+						"reprocessing queue, batch: %v because there wasn't enough balance on the channel\n",
+						htlc.PaymentHash[:],
+						l.batchCounter))
+					l.overflowQueue.AddPkt(pkt)
+					return
+				}
+        fallthrough
 
 			// The HTLC was unable to be added to the state
 			// machine, as a result, we'll signal the switch to
@@ -1091,6 +1313,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 				if err != nil {
 					failure = &lnwire.FailTemporaryNodeFailure{}
 				} else {
+					debug_print("failure 4")
 					failure = lnwire.NewTemporaryChannelFailure(
 						update,
 					)
@@ -1147,9 +1370,31 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			}
 		}
 
+    //if (LOG_FIREBASE) {
+      //go func() {
+        // val := fmt.Sprintf("%x", htlc.PaymentHash[:])
+        //l.downstreamFirebaseConnMutex.Lock()
+        //if _, err := l.downstreamFirebaseConn.Push(val); err != nil {
+          //debug_print("error when logging to firebase")
+        //}
+        //l.downstreamFirebaseConnMutex.Unlock()
+      //}()
+      //l.downstreamPathStatsLock.Lock()
+      //l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
+      //l.downstreamPathStatsLock.Unlock()
+      // Method 3:
+      //val := fmt.Sprintf("%x", htlc.PaymentHash[:])
+      //l.downstreamFirebaseConnMutex.Lock()
+      //debug_print(fmt.Sprintf("downstream val: %s\n", val))
+      //l.downstreamFirebaseConnMutex.Unlock()
+    //}
+
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
 			"local_log_index=%v, batch_size=%v",
 			htlc.PaymentHash[:], index, l.batchCounter+1)
+		debug_print(fmt.Sprintf("Received downstream htlc: payment_hash=%x, "+
+			"local_log_index=%v, batch_size=%v\n",
+			htlc.PaymentHash[:], index, l.batchCounter+1))
 
 		pkt.outgoingChanID = l.ShortChanID()
 		pkt.outgoingHTLCID = index
@@ -1374,10 +1619,31 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			return
 		}
 
+    //if (LOG_FIREBASE) {
+      //go func() {
+        //val := fmt.Sprintf("%x", msg.PaymentHash[:])
+        //l.upstreamFirebaseConnMutex.Lock()
+        //if _, err := l.upstreamFirebaseConn.Push(val); err != nil {
+          //debug_print("error when logging to firebase")
+        //}
+        //l.upstreamFirebaseConnMutex.Unlock()
+      //}()
+      //l.upstreamPathStatsLock.Lock()
+      //l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
+      //l.upstreamPathStatsLock.Unlock()
+      //val := fmt.Sprintf("%x", msg.PaymentHash[:])
+      //l.upstreamFirebaseConnMutex.Lock()
+      //debug_print(fmt.Sprintf("upstream val: %s\n", val))
+      //l.upstreamFirebaseConnMutex.Unlock()
+    //}
+
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v", msg.PaymentHash[:], index)
+		debug_print(fmt.Sprintf("Receive upstream htlc with payment hash(%x), "+
+			"assigning index: %v\n", msg.PaymentHash[:], index))
 
 	case *lnwire.UpdateFulfillHTLC:
+		debug_print(fmt.Sprintf("UpdateFulfillHTLC in chan: %s\n", l.shortChanID))
 		pre := msg.PaymentPreimage
 		idx := msg.ID
 		if err := l.channel.ReceiveHTLCSettle(pre, idx); err != nil {
@@ -1800,6 +2066,12 @@ func (l *channelLink) ChanID() lnwire.ChannelID {
 func (l *channelLink) Bandwidth() lnwire.MilliSatoshi {
 	channelBandwidth := l.channel.AvailableBalance()
 	overflowBandwidth := l.overflowQueue.TotalHtlcAmount()
+	// pari (spider): after we add the queues, overflowBandwidth can become greater than
+	// channelBandwidth - before presumably this was never happening because the
+	// packet would have been dropped earlier
+	if channelBandwidth < overflowBandwidth {
+		return 0
+	}
 
 	// To compute the total bandwidth, we'll take the current available
 	// bandwidth, then subtract the overflow bandwidth as we'll eventually
@@ -1810,6 +2082,7 @@ func (l *channelLink) Bandwidth() lnwire.MilliSatoshi {
 	// If the channel reserve is greater than the total available balance
 	// of the link, just return 0.
 	reserve := lnwire.NewMSatFromSatoshis(l.channel.LocalChanReserve())
+	//debug_print(fmt.Sprintf("reserve %v", reserve))
 	if linkBandwidth < reserve {
 		return 0
 	}
@@ -1870,7 +2143,7 @@ func (l *channelLink) HtlcSatifiesPolicy(payHash [32]byte,
 	incomingHtlcAmt, amtToForward lnwire.MilliSatoshi,
 	incomingTimeout, outgoingTimeout uint32,
 	heightNow uint32) lnwire.FailureMessage {
-
+	debug_print("in HtlcSatisfiesPolicy");
 	l.RLock()
 	policy := l.cfg.FwrdingPolicy
 	l.RUnlock()
@@ -1942,6 +2215,7 @@ func (l *channelLink) HtlcSatifiesPolicy(payHash [32]byte,
 			l.ShortChanID(),
 		)
 		if err != nil {
+			debug_print("failure 1")
 			failure = lnwire.NewTemporaryChannelFailure(update)
 		} else {
 			failure = lnwire.NewExpiryTooSoon(*update)
@@ -1966,6 +2240,7 @@ func (l *channelLink) HtlcSatifiesPolicy(payHash [32]byte,
 			l.ShortChanID(),
 		)
 		if err != nil {
+			debug_print("failure 2")
 			failure = lnwire.NewTemporaryChannelFailure(update)
 		} else {
 			failure = lnwire.NewIncorrectCltvExpiry(
@@ -1984,7 +2259,6 @@ func (l *channelLink) HtlcSatifiesPolicy(payHash [32]byte,
 // NOTE: Part of the ChannelLink interface.
 func (l *channelLink) Stats() (uint64, lnwire.MilliSatoshi, lnwire.MilliSatoshi) {
 	snapshot := l.channel.StateSnapshot()
-
 	return snapshot.ChannelCommitment.CommitHeight,
 		snapshot.TotalMSatSent,
 		snapshot.TotalMSatReceived
@@ -2459,6 +2733,33 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				PaymentPreimage: preimage,
 			})
 			needUpdate = true
+      if (LOG_FIREBASE) {
+        // recording successful htlc payments
+        // Method 4: send it over channel to separate goroutine
+        //l.successChan <- fmt.Sprintf("%x", pd.RHash)
+        // we do this in a new goroutine so this doesn't hold up the rest of
+        // the lnd stuff from functioning
+        //go func() {
+          //vals := make(map[string] string)
+          //vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
+                                        //int32(time.Now().Unix()))
+          //l.successFirebaseConnMutex.Lock()
+          //if _, err := l.successFirebaseConn.Push(vals); err != nil {
+            //debug_print("error when logging to firebase")
+          //}
+          //l.successFirebaseConnMutex.Unlock()
+        //}()
+
+        // Method 3:
+        //vals := make(map[string] string)
+        //vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
+                                      //int32(time.Now().Unix()))
+        //l.successFirebaseConnMutex.Lock()
+        //debug_print(fmt.Sprintf("%v", vals))
+        //l.successFirebaseConnMutex.Unlock()
+      }
+
+      debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
 
 		// There are additional channels left within this route. So
 		// we'll simply do some forwarding package book-keeping.
@@ -2549,6 +2850,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				if err != nil {
 					failure = &lnwire.FailTemporaryNodeFailure{}
 				} else {
+					debug_print("failure 3")
 					failure = lnwire.NewTemporaryChannelFailure(
 						update,
 					)

@@ -21,7 +21,12 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/ticker"
+	"os"
 )
+// spider imports
+//import (
+  //"gopkg.in/zabawaba99/firego.v1"
+//)
 
 const (
 	// DefaultFwdEventInterval is the duration between attempts to flush
@@ -187,6 +192,16 @@ type Config struct {
 // HTLCs, forwarding HTLCs initiated from within the daemon, and finally
 // notifies users local-systems concerning their outstanding payment requests.
 type Switch struct {
+  // FIXME: spider variable
+  //sentHtlc map[string] string
+  // since sentHtlc will be updated by multiple threads at the same time, we
+  // need to protect it with a mutex
+	//sentHtlcMutex sync.Mutex
+  // using streaming firebase connection
+  //firebaseConn *firego.Firebase
+  //firebaseMutex sync.Mutex
+  //attemptedChan chan string
+
 	started  int32 // To be used atomically.
 	shutdown int32 // To be used atomically.
 
@@ -282,7 +297,7 @@ type Switch struct {
 // New creates the new instance of htlc switch.
 func New(cfg Config, currentHeight uint32) (*Switch, error) {
 	circuitMap, err := NewCircuitMap(&CircuitMapConfig{
-		DB: cfg.DB,
+		DB:                    cfg.DB,
 		ExtractErrorEncrypter: cfg.ExtractErrorEncrypter,
 	})
 	if err != nil {
@@ -349,16 +364,67 @@ func (s *Switch) ProcessContractResolution(msg contractcourt.ResolutionMsg) erro
 	return nil
 }
 
+func (s *Switch) getSwitchKey() string {
+	// First, we need a unique identifier for the switch so we can use it as a
+	// key when logging the information online. There does not seem to be any
+	// unique identifier already specified (?), so we generate one based on the
+	// hash of the values of the fields within the switch's cfg - since this does
+	// not seem to change.
+	// Note: %v just prints out the structs field values etc unless a specific
+	// representation is specified.
+	nodeName := os.Getenv("NODENAME")
+	if (nodeName != "") {
+		return nodeName;
+	}
+	switchKey := fmt.Sprintf("%v", s.cfg)
+	// randomly truncate.
+	switchKey = switchKey[0:100]
+	switchKey = fmt.Sprintf("%v", hash(switchKey))
+	debug_print("updated switchKey: " + switchKey)
+	return switchKey
+}
+
 // SendHTLC is used by other subsystems which aren't belong to htlc switch
 // package in order to send the htlc update.
 func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 	htlc *lnwire.UpdateAddHTLC,
 	deobfuscator ErrorDecrypter) ([sha256.Size]byte, error) {
 
+  if (LOG_FIREBASE) {
+    // Latest method:
+    //s.attemptedChan <- fmt.Sprintf("%x", htlc.PaymentHash)
+
+    /// Method 1:
+    //s.sentHtlcMutex.Lock()
+    //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+    //s.sentHtlcMutex.Unlock()
+    /// Method 2:
+    //go func() {
+      //vals := make(map[string] string)
+      //vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
+                                    //int32(time.Now().Unix()))
+      //s.firebaseMutex.Lock()
+      //if _, err := s.firebaseConn.Push(vals); err != nil {
+        //debug_print("error when logging to firebase")
+      //}
+      //s.firebaseMutex.Unlock()
+    //}()
+    /// Method 3:
+    //vals := make(map[string] string)
+    //vals[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d",
+                                  //int32(time.Now().Unix()))
+    //s.firebaseMutex.Lock()
+    //debug_print(fmt.Sprintf("%v", vals))
+    //s.firebaseMutex.Unlock()
+
+    // method 4: channels
+  }
+
 	// Before sending, double check that we don't already have 1) an
 	// in-flight payment to this payment hash, or 2) a complete payment for
 	// the same hash.
 	if err := s.control.ClearForTakeoff(htlc); err != nil {
+		debug_print(fmt.Sprintf("clear for takeoff failed\n"))
 		return zeroPreimage, err
 	}
 
@@ -374,6 +440,7 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 
 	paymentID, err := s.paymentSequencer.NextID()
 	if err != nil {
+		debug_print(fmt.Sprintf("payement sequencer failed\n"))
 		return zeroPreimage, err
 	}
 
@@ -390,12 +457,15 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 		outgoingChanID: firstHop,
 		htlc:           htlc,
 	}
+  debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
 
 	if err := s.forward(packet); err != nil {
 		s.removePendingPayment(paymentID)
 		if err := s.control.Fail(htlc.PaymentHash); err != nil {
+			debug_print(fmt.Sprintf("in SendHTLC s.forward error1\n"))
 			return zeroPreimage, err
 		}
+		debug_print(fmt.Sprintf("in SendHTLC s.forward error2\n"))
 
 		return zeroPreimage, err
 	}
@@ -417,7 +487,7 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 	case <-s.quit:
 		return zeroPreimage, ErrSwitchExiting
 	}
-
+	debug_print(fmt.Sprintf("returning from sendHTLC\n"))
 	return preimage, err
 }
 
@@ -484,13 +554,14 @@ func (s *Switch) UpdateForwardingPolicies(newPolicy ForwardingPolicy,
 func (s *Switch) forward(packet *htlcPacket) error {
 	switch htlc := packet.htlc.(type) {
 	case *lnwire.UpdateAddHTLC:
+		debug_print(fmt.Sprintf("UpdateAddHTLC packet!\n"))
 		circuit := newPaymentCircuit(&htlc.PaymentHash, packet)
 		actions, err := s.circuits.CommitCircuits(circuit)
 		if err != nil {
+			debug_print(fmt.Sprintf("s.circuits.CommitCirciots fails\n"))
 			log.Errorf("unable to commit circuit in switch: %v", err)
 			return err
 		}
-
 		// Drop duplicate packet if it has already been seen.
 		switch {
 		case len(actions.Drops) == 1:
@@ -508,16 +579,15 @@ func (s *Switch) forward(packet *htlcPacket) error {
 			if err != nil {
 				failure = &lnwire.FailTemporaryNodeFailure{}
 			} else {
+				debug_print("failure 5")
 				failure = lnwire.NewTemporaryChannelFailure(update)
 			}
 			addErr := ErrIncompleteForward
 
 			return s.failAddPacket(packet, failure, addErr)
 		}
-
 		packet.circuit = circuit
 	}
-
 	return s.route(packet)
 }
 
@@ -659,6 +729,7 @@ func (s *Switch) ForwardPackets(linkQuit chan struct{},
 		if err != nil {
 			failure = &lnwire.FailTemporaryNodeFailure{}
 		} else {
+			debug_print("failure 6")
 			failure = lnwire.NewTemporaryChannelFailure(update)
 		}
 
@@ -709,6 +780,7 @@ func (s *Switch) proxyFwdErrs(num *int, wg *sync.WaitGroup,
 // route sends a single htlcPacket through the switch and synchronously awaits a
 // response.
 func (s *Switch) route(packet *htlcPacket) error {
+	debug_print("route\n")
 	command := &plexPacket{
 		pkt: packet,
 		err: make(chan error, 1),
@@ -717,13 +789,17 @@ func (s *Switch) route(packet *htlcPacket) error {
 	select {
 	case s.htlcPlex <- command:
 	case <-s.quit:
+		debug_print(fmt.Sprintf("s.route: <-s.quit\n"))
 		return ErrSwitchExiting
 	}
 
 	select {
 	case err := <-command.err:
+		//debug_print(fmt.Sprintf("s.route: <-command.err. err is: \n"))
+		//debug_print(err)
 		return err
 	case <-s.quit:
+		debug_print(fmt.Sprintf("s.route: ErrSwitchExiting\n"))
 		return ErrSwitchExiting
 	}
 }
@@ -773,6 +849,7 @@ func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
 		link, err := s.getLinkByShortID(pkt.outgoingChanID)
 		s.indexMtx.RUnlock()
 		if err != nil {
+			debug_print(fmt.Sprintf("Link %v not found", pkt.outgoingChanID))
 			log.Errorf("Link %v not found", pkt.outgoingChanID)
 			return &ForwardingError{
 				ErrorSource:    s.cfg.SelfKey,
@@ -787,6 +864,7 @@ func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
 
 			// The update does not need to be populated as the error
 			// will be returned back to the router.
+			debug_print("failure 60")
 			htlcErr := lnwire.NewTemporaryChannelFailure(nil)
 			return &ForwardingError{
 				ErrorSource:    s.cfg.SelfKey,
@@ -795,7 +873,7 @@ func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
 			}
 		}
 
-		if link.Bandwidth() < htlc.Amount {
+		if link.Bandwidth() < htlc.Amount && !SPIDER_FLAG {
 			err := fmt.Errorf("Link %v has insufficient capacity: "+
 				"need %v, has %v", pkt.outgoingChanID,
 				htlc.Amount, link.Bandwidth())
@@ -803,6 +881,7 @@ func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
 
 			// The update does not need to be populated as the error
 			// will be returned back to the router.
+			debug_print("failure 7")
 			htlcErr := lnwire.NewTemporaryChannelFailure(nil)
 			return &ForwardingError{
 				ErrorSource:    s.cfg.SelfKey,
@@ -811,10 +890,12 @@ func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
 			}
 		}
 
+		debug_print("before link.HandleSwitchPacket\n")
 		return link.HandleSwitchPacket(pkt)
 	}
 
 	s.wg.Add(1)
+	debug_print("before handleLocalResponse\n")
 	go s.handleLocalResponse(pkt)
 
 	return nil
@@ -913,6 +994,7 @@ func (s *Switch) handleLocalResponse(pkt *htlcPacket) {
 	// Deliver the payment error and preimage to the application, if it is
 	// waiting for a response.
 	if payment != nil {
+		debug_print("payment != nil, in switch.go\n")
 		payment.err <- paymentErr
 		payment.preimage <- preimage
 		s.removePendingPayment(pkt.incomingHTLCID)
@@ -948,6 +1030,7 @@ func (s *Switch) parseFailedPayment(payment *pendingPayment, pkt *htlcPacket,
 			// As this didn't even clear the link, we don't need to
 			// apply an update here since it goes directly to the
 			// router.
+			debug_print("failure 8")
 			failureMsg = lnwire.NewTemporaryChannelFailure(nil)
 		}
 		failure = &ForwardingError{
@@ -973,6 +1056,7 @@ func (s *Switch) parseFailedPayment(payment *pendingPayment, pkt *htlcPacket,
 	// due to a restart. We'll return a fixed error and signal a temporary
 	// channel failure to the router.
 	case payment == nil:
+		debug_print("failure 9")
 		userErr := fmt.Sprintf("error decryptor for payment " +
 			"could not be located, likely due to restart")
 		failure = &ForwardingError{
@@ -989,6 +1073,7 @@ func (s *Switch) parseFailedPayment(payment *pendingPayment, pkt *htlcPacket,
 		// error. If we're unable to then we'll bail early.
 		failure, err = payment.deobfuscator.DecryptError(htlc.Reason)
 		if err != nil {
+			debug_print("failure 10")
 			userErr := fmt.Sprintf("unable to de-obfuscate onion "+
 				"failure, htlc with hash(%x): %v",
 				pkt.circuit.PaymentHash[:], err)
@@ -1042,7 +1127,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 		// precise link that the sender selected, while optimistically
 		// trying all links to utilize our available bandwidth.
 		linkErrs := make(map[lnwire.ShortChannelID]lnwire.FailureMessage)
-
+		debug_print("before for interfaceLinks loop")
 		// Try to find destination channel link with appropriate
 		// bandwidth.
 		var destination ChannelLink
@@ -1068,14 +1153,24 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 				packet.amount, packet.incomingTimeout,
 				packet.outgoingTimeout, currentHeight,
 			)
+			debug_print(fmt.Sprintf("link being considered is: %s\n", link.ShortChanID()))
 			if err != nil {
-				linkErrs[link.ShortChanID()] = err
-				continue
+				switch err {
+					case lnwallet.ErrBelowChanReserve:
+						debug_print(fmt.Sprintf("lnwallet.ErrBelowChanReserve when checking future links. We don't care\n"))
+						destination = link
+						break
+					default:
+						linkErrs[link.ShortChanID()] = err
+						continue
+				}
+			} else {
+				debug_print("err was nil!")
 			}
-
-			if link.Bandwidth() >= htlc.Amount {
+			// Note: for spider, we would still send the funds even if the link can't
+			// currently support it.
+			if link.Bandwidth() >= htlc.Amount || SPIDER_FLAG {
 				destination = link
-
 				break
 			}
 		}
@@ -1096,6 +1191,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 			if err != nil {
 				failure = &lnwire.FailTemporaryNodeFailure{}
 			} else {
+				debug_print("failure 11")
 				failure = lnwire.NewTemporaryChannelFailure(update)
 			}
 
@@ -1456,7 +1552,7 @@ func (s *Switch) htlcForwarder() {
 
 	defer func() {
 		s.blockEpochStream.Cancel()
-
+    debug_print("going to call link.Stop for all switch's links\n")
 		// Remove all links once we've been signalled for shutdown.
 		var linksToStop []ChannelLink
 		s.indexMtx.Lock()
@@ -1587,6 +1683,7 @@ out:
 		// packet concretely, then either forward it along, or
 		// interpret a return packet to a locally initialized one.
 		case cmd := <-s.htlcPlex:
+			debug_print("In htlcForwarder, cmd <- htlcPlex");
 			cmd.err <- s.handlePacketForward(cmd.pkt)
 
 		// When this time ticks, then it indicates that we should
@@ -1686,12 +1783,43 @@ out:
 	}
 }
 
+//func (s *Switch) updateAggregateStatsFirebase() {
+  //vals := make(map[string] string)
+  //for {
+    //htlcHash, valid := <-s.attemptedChan
+    //if (!valid) {
+      //break
+    //}
+    //vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+    //if (len(vals) >= 10) {
+      //debug_print("logging to firebase from switch\n")
+      //start := time.Now()
+      //if _, err := s.firebaseConn.Push(vals); err != nil {
+        //debug_print("error when logging to firebase")
+      //}
+      //debug_print(fmt.Sprintf("elapsed time for logging to fb is: %s\n, ", time.Since(start)))
+      //vals = make(map[string] string)
+    //}
+  //}
+//}
+
 // Start starts all helper goroutines required for the operation of the switch.
 func (s *Switch) Start() error {
 	if !atomic.CompareAndSwapInt32(&s.started, 0, 1) {
 		log.Warn("Htlc Switch already started")
 		return errors.New("htlc switch already started")
 	}
+
+  if (LOG_FIREBASE) {
+    //s.sentHtlc = make(map[string] string)
+
+    // method 2:
+    //switchKey := s.getSwitchKey()
+    //s.firebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+                //"/aggregateStats/attempted/" + switchKey, nil)
+    //s.attemptedChan = make (chan string, 10000)
+    //go s.updateAggregateStatsFirebase()
+  }
 
 	log.Infof("Starting HTLC Switch")
 
@@ -1868,13 +1996,28 @@ func handleBatchFwdErrs(errChan chan error) {
 	}
 }
 
+func (s *Switch) logAggregateStatsFb() {
+  //debug_print("in switch's logAggregateStatsFb\n")
+  //switchKey := s.getSwitchKey()
+  //fb := firego.New(FIREBASE_URL + EXP_NAME +
+                      //"/aggregateStats/attempted/" + switchKey, nil)
+  //if _, err := fb.Push(s.sentHtlc); err != nil {
+    //debug_print("error when logging to firebase")
+  //}
+}
+
 // Stop gracefully stops all active helper goroutines, then waits until they've
 // exited.
 func (s *Switch) Stop() error {
+  debug_print("switch.Stop\n")
 	if !atomic.CompareAndSwapInt32(&s.shutdown, 0, 1) {
 		log.Warn("Htlc Switch already stopped")
 		return errors.New("htlc switch already shutdown")
 	}
+
+  //if (LOG_FIREBASE) {
+    //s.logAggregateStatsFb()
+  //}
 
 	log.Infof("HTLC Switch shutting down")
 
