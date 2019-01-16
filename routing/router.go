@@ -51,6 +51,14 @@ const (
 	Waterfilling = iota
 )
 
+const (
+	// Here each constant corrsponds to a Spider routing algorithm. Those
+	// consts are used across files to represent a specific algorithm to
+	// use when sending payments.
+	off          = iota
+	ShortestPath = iota
+)
+
 var (
 	// ErrNoRouteHopsProvided is returned when a caller attempts to
 	// construct a new sphinx packet, but provides an empty set of hops for
@@ -2393,7 +2401,6 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 // error.
 func pruneVertexFailure(paySession *paymentSession, route *Route,
 	errSource *btcec.PublicKey, nextNode bool) {
-
 	// By default, we'll try to prune the node that actually sent us the
 	// error.
 	errNode := NewVertex(errSource)
@@ -2419,7 +2426,6 @@ func pruneVertexFailure(paySession *paymentSession, route *Route,
 // error.
 func pruneEdgeFailure(paySession *paymentSession, route *Route,
 	errSource *btcec.PublicKey) {
-
 	// As this error indicates that the target channel was unable to carry
 	// this HTLC (for w/e reason), we'll query the index to find the
 	// _outgoing_ channel the source of the error was meant to pass the
