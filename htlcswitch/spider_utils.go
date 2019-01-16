@@ -8,7 +8,7 @@ import (
 
 // FIXME: temporary until we can use the global flags
 var SPIDER_FLAG bool = os.Getenv("SPIDER_QUEUE") == "1"
-var LP_ROUTING bool = false
+var LP_ROUTING bool = os.Getenv("SPIDER_LP_ROUTING") == "1"
 var LP_INTERVAL int = 1000
 
 var DEBUG_FLAG bool = true
