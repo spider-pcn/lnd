@@ -407,8 +407,8 @@ func NewChannelLink(cfg ChannelLinkConfig,
 //}
 
 func (l *channelLink) periodicUpdatePriceProbe()  {
+	time.Sleep(time.Duration(10) * time.Second)
 	for {
-
 		msg := &lnwire.UpdatePriceProbe {
 			ChanID: l.ChanID(),
 			X_Remote : l.x_local,
