@@ -51,14 +51,6 @@ const (
 	Waterfilling = iota
 )
 
-const (
-	// Here each constant corrsponds to a Spider routing algorithm. Those
-	// consts are used across files to represent a specific algorithm to
-	// use when sending payments.
-	off          = iota
-	ShortestPath = iota
-)
-
 var (
 	// ErrNoRouteHopsProvided is returned when a caller attempts to
 	// construct a new sphinx packet, but provides an empty set of hops for
