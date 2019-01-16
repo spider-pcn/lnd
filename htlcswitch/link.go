@@ -408,6 +408,7 @@ func NewChannelLink(cfg ChannelLinkConfig,
 
 func (l *channelLink) periodicUpdatePriceProbe()  {
 	time.Sleep(time.Duration(10) * time.Second)
+	debug_print("going to start periodicUpdatePriceProbe after waiting 10 seconds\n")
 	for {
 		msg := &lnwire.UpdatePriceProbe {
 			ChanID: l.ChanID(),
