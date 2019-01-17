@@ -95,11 +95,19 @@ type RouteInfo struct {
 
 // LPPayment represents a pending LP payment.
 type LPPayment struct {
-	payment     LightningPayment	// The LightningPayment struct
-	completed   chan int		// Channel to notify the SendSpider
-					// invocation thad added this payment
-					// to the queue. 0 means succeeded.
+	payment     *LightningPayment		// The LightningPayment struct
+	result      chan LPPaymentResult	// Channel to notify the SendSpider
+						// invocation thad added this payment
+						// to the queue. 0 means succeeded.
 }
+
+type LPPaymentResult struct {
+	preImage    [32]byte
+	route       *Route
+	err         error
+}
+
+
 
 // newMissionControl returns a new instance of missionControl.
 //
@@ -113,9 +121,8 @@ func newMissionControl(g *channeldb.ChannelGraph, selfNode *channeldb.LightningN
 		selfNode:       selfNode,
 		queryBandwidth: qb,
 		graph:          g,
-		paymentQueueMutex: &sync.Mutex{}
-		paymentQueuePerDest: make(map[Vertex](chan LPPayment))
-
+		paymentQueueMutex: &sync.Mutex{},
+		paymentQueuePerDest: make(map[Vertex](chan LPPayment)),
 	}
 }
 

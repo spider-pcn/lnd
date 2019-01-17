@@ -1826,7 +1826,7 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			log.Errorf("Probe didn't compelete in time or some error in retreiving probe info")
 			return [32]byte{}, nil, errors.New("Probe information unavailable for destination")
 		}
-	
+
 	case LP:
 		// Route payments using LP pricing model.
 		// The payment is placed into a queue for this specific
@@ -1837,8 +1837,8 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 
 		// create LPPayment struct that we will add to the queue
 		LPPay := LPPayment {
-			payment: payment
-			completed: make(chan int)
+			payment: payment,
+			result: make(chan LPPaymentResult),
 		}
 		// Try to access (or create) the corresponding queue.
 		// First, lock the dest-queue map.
@@ -1849,20 +1849,124 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 		} else {
 			// if the queue is not there, create a queue and start
 			// a goroutine to handle this queue (destiniation)
-			// TODO(leiy): implement and start the goroutine
-			r.missionControl.paymentQueuePerDest[dest] = make(chan LPPayment)
+			log.Infof("Starting per-dest payment dispatcher")
+			r.missionControl.paymentQueuePerDest[dest] = make(chan LPPayment, 100)
 			r.missionControl.paymentQueuePerDest[dest] <- LPPay
+			go r.handleLPPaymentToDest(dest)
 		}
 		// unlock the dest-queue map
 		r.missionControl.paymentQueueMutex.Unlock()
 
 		// then we just block on the completed channel and wait for results
-		payRes := <-LPPay.completed
-
-		// TODO(leiy): react to payment results
+		log.Infof("Payment added to the queue")
+		payRes := <-LPPay.result
+		return payRes.preImage, payRes.route, payRes.err
 	}
 
 	return [32]byte{}, nil, nil
+}
+
+type LPRouteInfo struct {
+	route         *Route
+	lastUpdated   time.Time		// when this info is updated
+	rate          float64		// txn per second
+	ready         *time.Timer	// timer indicating this path is ready
+	acceptor      chan LPPayment
+}
+
+// startLPRoute handles a path.
+//
+// It first initializes an LPRouteInfo struct for the specified route,
+// where a timer is created to pace transactions. When the timer fires,
+// it means this route is okay to process the next txn. To do so, it
+// passes its LPRouteInfo object through the "notifier" channel to the
+// handleLPPaymentToDest goroutine, expecting that goroutine will supply
+// a payment request to our "acceptor".
+func (r *ChannelRouter) startLPRoute(route *Route, notifier chan LPRouteInfo) *LPRouteInfo{
+	path := LPRouteInfo {
+		// we set the path to be ready when we init the path
+		route: route,
+		ready:    time.NewTimer(0),
+		acceptor: make(chan LPPayment),
+	}
+	go func() {
+		// main loop
+		for {
+			select {
+			case <-path.ready.C:
+				// If timer fires, tell the handleLPPaymentToDest
+				// goroutine that we are ready for the next txn
+				// Note that it may block, since the size of notifier
+				// should be 1.
+				notifier <- path
+
+				// then, wait for the payment to come
+				payment := <-path.acceptor
+
+				// send the payment
+				// TODO(leiy): maybe use a new goroutine, since it may block
+				preImage, route, err := r.SendToRoute([]*Route{path.route}, payment.payment)
+
+				// return result through the channel
+				result := LPPaymentResult {
+					preImage: preImage,
+					route: route,
+					err: err,
+				}
+				payment.result <- result
+
+				// TODO(leiy): set timer for the next txn
+				path.ready.Reset(0)
+			}
+		}
+	}()
+	return &path
+
+}
+
+// handleLPPaymentToDest handles everything related to LP payments to the dest
+// TODO(leiy): details
+func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) {
+	// first, get the LPPayment queue from missionControl
+	r.missionControl.paymentQueueMutex.Lock()
+	q := r.missionControl.paymentQueuePerDest[dest]
+	r.missionControl.paymentQueueMutex.Unlock()
+
+	// make a channel to get next available path
+	nextAvailable := make(chan LPRouteInfo)
+
+	// then, init data structures to store per-route info of routes to this dest
+	var paths []*LPRouteInfo
+	// We don't fill the paths for now, but rather wait for the first payment
+	// to come in. This is a hack, in order to overcome the fact that the
+	// RequestKShortestPaths function requires a payment parameter
+	pathsInited := false
+
+	// main loop to process the queue
+	// TODO(leiy): currently this function won't exit once started
+	// shall we stop it when the queue is cleared?
+	for {
+		select {
+		case p := <-q:
+			if pathsInited == false {
+				kShortest, err := r.getKShortestPaths(dest, p.payment)
+				if err != nil {
+					log.Errorf("failed to init dest")
+					// TODO(leiy): return error through p.result
+					continue
+				}
+				for _, shortPath := range kShortest {
+					paths = append(paths, r.startLPRoute(shortPath, nextAvailable))
+				}
+				pathsInited = true
+			}
+			// if there is a new payment to be processed
+			// wait for the next available path
+			availablePath := <-nextAvailable
+			// use this path
+			availablePath.acceptor <- p
+		}
+	}
 }
 
 // sendPaymentAsPerWaterfilling takes in a set of routes to the destination and their associated balances

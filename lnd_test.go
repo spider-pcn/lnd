@@ -3645,6 +3645,10 @@ func testMultiHopPayments(net *lntest.NetworkHarness, t *harnessTest) {
 	closeChannelAndAssert(ctxt, t, net, carol, chanPointCarol, false)
 }
 
+func testSpiderLP(net *lntest.NetworkHarness, t *harnessTest) {
+	testSpiderAlgorithms(net, t, routing.LP)
+}
+
 // testSpiderShortestPath benchmarks the performance of the ShortestPaths algorithm
 // on the topology mentioned in the Hotnets Paper
 func testSpiderShortestPath(net *lntest.NetworkHarness, t *harnessTest) {
@@ -12514,6 +12518,10 @@ type testCase struct {
 }
 
 var testsCases = []*testCase{
+	{
+		name: "test spider LP routing",
+		test: testSpiderLP,
+	},
 	{
 		name: "test spider shortest path routing",
 		test: testSpiderShortestPath,
