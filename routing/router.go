@@ -404,7 +404,7 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 	routeInfoEntry := (*r.missionControl.LPRouteInfoPerDest[dest])[msg.PathID]
 	// TODO(leiy): compute the rate, instead of using 0.0
 	routeInfoEntry.rate = 0.0
-	log.Infof("updated rate")
+	log.Infof("updated LP rate")
 }
 
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
