@@ -2153,6 +2153,29 @@ func (r *ChannelRouter) createNewProbesToDest(dest Vertex, routeChoices []*Route
 
 }
 
+func (r *ChannelRouter) initiateProbeLP(route *Route, pathID uint32) {
+	log.Infof("Initiating waterfilling  probe on route %v\n", route)
+	// Craft a probe packet to send out along this route
+	senderNode := r.selfNode.PubKeyBytes
+	probePath := r.convertRouteToLnwireVertex(route)
+	pathLength := len(probePath)
+
+	// fill in the fields for the probe message
+	probeMsg := &lnwire.ProbeRouteChannelPrices {
+		Route:                 probePath,
+		HopNum:                0,
+		RouterChannelPrices: make([]lnwire.MilliSatoshi, pathLength),
+		Sender:                lnwire.Vertex(senderNode),
+		ProbeCompleted:        0,
+		CurrentNode:           lnwire.Vertex(senderNode),
+		PathID:                pathID,
+		Error:                 0,
+	}
+
+	// send the probe to the first hop which will propagate it onwards
+	r.cfg.SendProbeToFirstHopLP(probeMsg)
+}
+
 // initiateProbe initiates a probe to the route specified. This first involves converting the probes'
 // routes to a format recognized by the probe messages (list of public key addresses of the nodes in
 // the path between sender and the receiver) and then actually sending it on the first hop
