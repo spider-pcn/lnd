@@ -3,7 +3,7 @@ package lnwire
 import "io"
 
 type UpdatePriceProbe struct {
-	X_Remote uint32
+	X_Remote uint64
 	ChanID ChannelID
 }
 

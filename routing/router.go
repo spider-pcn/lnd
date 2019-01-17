@@ -383,6 +383,8 @@ func (r *ChannelRouter) updateDestRouteBalances(msg *lnwire.ProbeRouteChannelBal
 
 /// Copy of HandleCompletedProbe.
 func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPrices, sendNewProbe bool) {
+	log.Infof("LP: HandleCompletedProbeLP\n")
+	log.Infof("LP: final prices: %v \n", msg.RouterChannelPrices)
 	// reverse the route because probe comes back reversed
 	// create a new array of type Vertex also to avoid casts from lnwire.Vertex to Vertex
 	// and vice versa

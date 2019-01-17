@@ -1087,7 +1087,7 @@ out:
 			peerLog.Infof("received ProbeRouteChannelBalances probe from peer=%v", p.pubKeyBytes)
 			p.server.respondToProbe(msg)
 		case *lnwire.ProbeRouteChannelPrices:
-			peerLog.Infof("received ProbeRouteChannelPrices probe from peer=%v", p.pubKeyBytes)
+			peerLog.Infof("LP: received ProbeRouteChannelPrices probe from peer=%v", p.pubKeyBytes)
 			p.server.respondToProbeLP(msg)
 
 		default:
