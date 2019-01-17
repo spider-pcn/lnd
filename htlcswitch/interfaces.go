@@ -40,6 +40,11 @@ type InvoiceDatabase interface {
 //       |
 //
 type ChannelLink interface {
+	// Spider specific change
+	/// FIXME: we should inherit from ChannelLink to make it SpiderChannelLink
+	// somehow??
+	LP_Price() lnwire.MilliSatoshi
+
 	// TODO(roasbeef): modify interface to embed mail boxes?
 
 	// HandleSwitchPacket handles the switch packets. This packets might be

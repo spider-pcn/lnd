@@ -260,7 +260,8 @@ type channelLink struct {
 	mu_local float32
 	mu_remote float32
 	lambda float32
-	N uint64		// number of transactions since the last UpdatePriceProbe
+	// FIXME: should these be in terms of millisatoshis?
+	N uint64		// value of transactions since the last UpdatePriceProbe
 	capacity float32
 
 	// The following fields are only meant to be used *atomically*
@@ -2166,6 +2167,13 @@ func (l *channelLink) Bandwidth() lnwire.MilliSatoshi {
 	// point is the available balance minus the reserve amount we are
 	// required to keep as collateral.
 	return linkBandwidth - reserve
+}
+
+func (l *channelLink) LP_Price() lnwire.MilliSatoshi {
+	// FIXME: need to verify the types. does this work??
+	// equation from the specs: (2 * \lambda) + \mu_local  - \mu_remote
+	price := lnwire.MilliSatoshi((2 * l.lambda) + l.mu_local - l.mu_remote)
+	return price
 }
 
 // AttachMailBox updates the current mailbox used by this link, and hooks up

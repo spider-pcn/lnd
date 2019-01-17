@@ -56,6 +56,7 @@ const (
 	MsgGossipTimestampRange                  = 265
 	MsgProbeRouteChannelBalances             = 266
 	MsgUpdatePriceProbe											 = 267
+	MsgProbeRouteChannelPrices               = 268
 )
 
 // String return the string representation of message type.
@@ -121,6 +122,8 @@ func (t MessageType) String() string {
 		return "ProbeRouteChannelBalances"
 	case MsgUpdatePriceProbe:
 		return "UpdatePriceProbe"
+	case MsgProbeRouteChannelPrices:
+		return "ProbeRouteChannelPrices"
 	default:
 		return "<unknown>"
 	}
@@ -226,6 +229,8 @@ func makeEmptyMessage(msgType MessageType) (Message, error) {
 		msg = &ProbeRouteChannelBalances{}
 	case MsgUpdatePriceProbe:
 		msg = &UpdatePriceProbe{}
+	case MsgProbeRouteChannelPrices:
+		msg = &ProbeRouteChannelPrices{}
 	default:
 		return nil, &UnknownMessage{msgType}
 	}
