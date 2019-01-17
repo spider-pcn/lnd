@@ -256,7 +256,7 @@ type channelLink struct {
   //upstreamFirebaseConnMutex sync.Mutex
 
 	// lp routing
-	x_local int32
+	x_local uint32
 
 	// The following fields are only meant to be used *atomically*
 	started  int32
@@ -418,6 +418,8 @@ func (l *channelLink) periodicUpdatePriceProbe()  {
 
 		if err := l.cfg.Peer.SendMessage(true, msg); err != nil {
 			debug_print("periodicUpdatePriceProbe failed!\n")
+			debug_print(fmt.Sprintf("err is: %v!\n", err))
+			debug_print(fmt.Sprintf("err is: %x!\n", err))
 		}
 		// send latest value of x_local to peer
 		time.Sleep(time.Duration(LP_INTERVAL) * time.Millisecond)
