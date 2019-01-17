@@ -1882,13 +1882,18 @@ type LPRouteInfo struct {
 // passes its LPRouteInfo object through the "notifier" channel to the
 // handleLPPaymentToDest goroutine, expecting that goroutine will supply
 // a payment request to our "acceptor".
-func (r *ChannelRouter) startLPRoute(route *Route, notifier chan LPRouteInfo) *LPRouteInfo{
+func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, notifier chan LPRouteInfo) *LPRouteInfo{
 	path := LPRouteInfo {
 		// we set the path to be ready when we init the path
 		route: route,
 		ready:    time.NewTimer(0),
 		acceptor: make(chan LPPayment),
 	}
+	// start probing the path
+	// TODO(leiy): we won't stop probing before sigcomm
+	stopProbing := make(chan int)
+	go r.startLPProbing(dest, route, stopProbing)
+
 	go func() {
 		// main loop
 		for {
@@ -1960,7 +1965,7 @@ func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) {
 					continue
 				}
 				for _, shortPath := range kShortest {
-					paths = append(paths, r.startLPRoute(shortPath, nextAvailable))
+					paths = append(paths, r.startLPRoute(dest, shortPath, nextAvailable))
 				}
 				pathsInited = true
 			}
@@ -2048,6 +2053,22 @@ func (r *ChannelRouter) convertRouteToVertex(route *Route) []Vertex {
 		probePath[i] = Vertex(v)
 	}
 	return probePath
+}
+
+// startLPProbing starts probing a certain path (route)
+func (r *ChannelRouter) startLPProbing(dest Vertex, route *Route, stop chan int) {
+	// set up a ticker to fire every defaultProbeInterval
+	ticker := time.NewTicker(defaultProbeInterval)
+	for {
+		select {
+		case <-stop:
+			// if we get signal through stop to stop probing
+			ticker.Stop()
+			return
+		case <-ticker.C:
+			// TODO(leiy): probe once
+		}
+	}
 }
 
 // createNewProbesToDest creates new probes to the given destination (dest) along the routes sent
