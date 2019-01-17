@@ -1115,6 +1115,7 @@ func (s *server) RespondToProbeInProgressLP(msg *lnwire.ProbeRouteChannelPrices)
 	if !link.EligibleToForward() {
 		// FIXME: pari. Not sure what the correct behaviour here should be.
 		// Maybe set an error in the msg???
+		srvrLog.Infof("LP: link not eligible to forward!!!!! FIXME\n")
 		nextChannelPrice = 0
 	} else {
 		// Otherwise, we'll return the current best estimate
@@ -1133,6 +1134,7 @@ func (s *server) RespondToProbeInProgressLP(msg *lnwire.ProbeRouteChannelPrices)
 // ForwardCompletedProbe is a helper function to forward a completed probe
 // towards the sender
 func (s *server) ForwardCompletedProbeLP(msg *lnwire.ProbeRouteChannelPrices) {
+	srvrLog.Infof("LP: ForwardCompletedProbeLP\n")
 	nextHop := msg.Route[msg.HopNum+1]
 	msg.CurrentNode = nextHop
 	msg.HopNum += 1
@@ -1170,6 +1172,7 @@ func (s *server) ForwardCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
 
 // LP copy
 func (s *server) ConvertProbeToCompletedProbeLP(msg *lnwire.ProbeRouteChannelPrices) {
+	srvrLog.Infof("LP: ConvertProbeToCompletedProbeLP\n")
 	reversedRoute := msg.Route
 	for i := len(reversedRoute)/2 - 1; i >= 0; i-- {
 		opp := len(reversedRoute) - 1 - i
