@@ -1903,17 +1903,21 @@ func (r *ChannelRouter) startLPRoute(route *Route, notifier chan LPRouteInfo) *L
 				// then, wait for the payment to come
 				payment := <-path.acceptor
 
-				// send the payment
-				// TODO(leiy): maybe use a new goroutine, since it may block
-				preImage, route, err := r.SendToRoute([]*Route{path.route}, payment.payment)
+				// send the payment using a new goroutine
+				// we use a goroutine here because all txns through this path
+				// will be dispatched here. so we want them to be sent in
+				// parallel.
+				go func(route *Route, payment LPPayment) {
+					preImage, route, err := r.SendToRoute([]*Route{route}, payment.payment)
 
-				// return result through the channel
-				result := LPPaymentResult {
-					preImage: preImage,
-					route: route,
-					err: err,
-				}
-				payment.result <- result
+					// return result through the channel
+					result := LPPaymentResult {
+						preImage: preImage,
+						route: route,
+						err: err,
+					}
+					payment.result <- result
+				}(path.route, payment)
 
 				// TODO(leiy): set timer for the next txn
 				path.ready.Reset(0)
