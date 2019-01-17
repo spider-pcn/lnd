@@ -516,6 +516,7 @@ func newServer(listenAddrs []net.Addr, chanDB *channeldb.DB, cc *chainControl,
 			)
 		},
 		SendProbeToFirstHop: s.RespondToProbeInProgress,
+		SendProbeToFirstHopLP: s.RespondToProbeInProgressLP,
 		ChannelPruneExpiry:  time.Duration(time.Hour * 24 * 14),
 		GraphPruneInterval:  time.Duration(time.Hour),
 		QueryBandwidth: func(edge *channeldb.ChannelEdgeInfo) lnwire.MilliSatoshi {
@@ -1001,6 +1002,31 @@ func (s *server) Start() error {
 	return nil
 }
 
+/// Copy of the respondToProbe function
+func (s *server) respondToProbeLP(msg *lnwire.ProbeRouteChannelPrices) {
+	srvrLog.Infof("Responding to probe at %v", s.identityPriv.PubKey().SerializeCompressed())
+
+	if msg.ProbeCompleted != 0 {
+		if int(msg.HopNum)+1 < len(msg.Route) {
+			s.ForwardCompletedProbeLP(msg)
+			srvrLog.Infof("rev direction processing probe at hopnum=%d", msg.HopNum)
+		} else {
+			// update the table with minimum balance for the path
+			// and send out a new probe is payment hasn't completed
+			s.chanRouter.HandleCompletedProbeLP(msg, true)
+			srvrLog.Infof("finished probe")
+		}
+	} else {
+		if int(msg.HopNum)+1 < len(msg.Route) {
+			s.RespondToProbeInProgressLP(msg)
+			srvrLog.Infof("forward direction processing probe at hopnum=%d", msg.HopNum)
+		} else {
+			s.ConvertProbeToCompletedProbeLP(msg)
+			srvrLog.Infof("forward direction finished processing probe at hopnum=%d", msg.HopNum)
+		}
+	}
+}
+
 // respondToProbe responds to a probe message received from a neighboring node
 // it either appends the relevant channel balance to the channel balance map
 // or just propagates a probe in the reverse direction all the way to the sender
@@ -1018,7 +1044,6 @@ func (s *server) respondToProbe(msg *lnwire.ProbeRouteChannelBalances) {
 			// and send out a new probe is payment hasn't completed
 			s.chanRouter.HandleCompletedProbe(msg, true)
 			srvrLog.Infof("finished probe")
-
 		}
 	} else {
 		if int(msg.HopNum)+1 < len(msg.Route) {
@@ -1070,6 +1095,60 @@ func (s *server) RespondToProbeInProgress(msg *lnwire.ProbeRouteChannelBalances)
 	link.Peer().SendMessage(false, msg)
 }
 
+// essentially same as RespondToProbeInProgress, but for the
+// ProbeRouteChannelPrices type message
+func (s *server) RespondToProbeInProgressLP(msg *lnwire.ProbeRouteChannelPrices) {
+	nextHop := msg.Route[msg.HopNum+1]
+
+	// find the link between this node and the next hop and its balance
+	var nextChannelPrice lnwire.MilliSatoshi
+	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
+	if err != nil {
+		srvrLog.Errorf("Unable to find link to nextHop %v, because %s, so sending probe %v back",
+			nextHop, err, msg)
+		msg.Error = uint8(1)
+		s.ConvertProbeToCompletedProbeLP(msg)
+		return
+	}
+
+	link := links[0] //TODO: check this @vibhaa
+	if !link.EligibleToForward() {
+		// FIXME: pari. Not sure what the correct behaviour here should be.
+		// Maybe set an error in the msg???
+		nextChannelPrice = 0
+	} else {
+		// Otherwise, we'll return the current best estimate
+		// for the available bandwidth for the link.
+		nextChannelPrice = link.LP_Price()
+	}
+	msg.RouterChannelPrices[msg.HopNum] = nextChannelPrice
+
+	// update the message before sending to next hop
+	msg.CurrentNode = nextHop
+	msg.HopNum += 1
+
+	link.Peer().SendMessage(false, msg)
+}
+
+// ForwardCompletedProbe is a helper function to forward a completed probe
+// towards the sender
+func (s *server) ForwardCompletedProbeLP(msg *lnwire.ProbeRouteChannelPrices) {
+	nextHop := msg.Route[msg.HopNum+1]
+	msg.CurrentNode = nextHop
+	msg.HopNum += 1
+
+	// find the link to the next hop to send message on
+	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
+
+	if err == nil {
+		link := links[0] //TODO: check this @vibhaa
+		link.Peer().SendMessage(false, msg)
+	} else {
+		srvrLog.Errorf("Unable to find link to nextHop %v, because %s, so ignoring probe %v",
+			nextHop, err, msg)
+	}
+}
+
 // ForwardCompletedProbe is a helper function to forward a completed probe
 // towards the sender
 func (s *server) ForwardCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
@@ -1078,6 +1157,32 @@ func (s *server) ForwardCompletedProbe(msg *lnwire.ProbeRouteChannelBalances) {
 	msg.HopNum += 1
 
 	// find the link to the next hop to send message on
+	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
+
+	if err == nil {
+		link := links[0] //TODO: check this @vibhaa
+		link.Peer().SendMessage(false, msg)
+	} else {
+		srvrLog.Errorf("Unable to find link to nextHop %v, because %s, so ignoring probe %v",
+			nextHop, err, msg)
+	}
+}
+
+// LP copy
+func (s *server) ConvertProbeToCompletedProbeLP(msg *lnwire.ProbeRouteChannelPrices) {
+	reversedRoute := msg.Route
+	for i := len(reversedRoute)/2 - 1; i >= 0; i-- {
+		opp := len(reversedRoute) - 1 - i
+		reversedRoute[i], reversedRoute[opp] = reversedRoute[opp], reversedRoute[i]
+	}
+	msg.Route = reversedRoute
+	msg.ProbeCompleted = 1
+
+	msg.HopNum = 1
+	nextHop := msg.Route[msg.HopNum]
+	msg.CurrentNode = nextHop
+
+	// find the appropriate link to the next hop and send message out
 	links, err := s.htlcSwitch.GetLinksByInterface(nextHop)
 
 	if err == nil {

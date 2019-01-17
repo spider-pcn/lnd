@@ -1047,7 +1047,6 @@ out:
 			isChanUpdate = true
 			targetChan = msg.ChanID
 		case *lnwire.UpdatePriceProbe:
-			peerLog.Infof("UpdatePriceProbe\n")
 			isChanUpdate = true
 			targetChan = msg.ChanID
 		case *lnwire.UpdateFulfillHTLC:
@@ -1085,8 +1084,11 @@ out:
 			discStream.AddMsg(msg, p.quit)
 
 		case *lnwire.ProbeRouteChannelBalances:
-			peerLog.Infof("received probe from peer=%v", p.pubKeyBytes)
+			peerLog.Infof("received ProbeRouteChannelBalances probe from peer=%v", p.pubKeyBytes)
 			p.server.respondToProbe(msg)
+		case *lnwire.ProbeRouteChannelPrices:
+			peerLog.Infof("received ProbeRouteChannelPrices probe from peer=%v", p.pubKeyBytes)
+			p.server.respondToProbeLP(msg)
 
 		default:
 			peerLog.Errorf("unknown message %v received from peer "+

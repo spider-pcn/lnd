@@ -180,6 +180,7 @@ type Config struct {
 	// the first hop in the route to be probed after filling out the
 	// information for the first outgoing channel
 	SendProbeToFirstHop func(msg *lnwire.ProbeRouteChannelBalances)
+	SendProbeToFirstHopLP func(msg *lnwire.ProbeRouteChannelPrices)
 
 	// ChannelPruneExpiry is the duration used to determine if a channel
 	// should be pruned or not. If the delta between now and when the
@@ -377,6 +378,51 @@ func (r *ChannelRouter) updateDestRouteBalances(msg *lnwire.ProbeRouteChannelBal
 		}
 	} else {
 		log.Errorf("Probe sent to unknown destination, error")
+	}
+}
+
+/// Copy of HandleCompletedProbe.
+/// FIXME: need to do different stuff here
+func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPrices, sendNewProbe bool) {
+	// reverse the route because probe comes back reversed
+	// create a new array of type Vertex also to avoid casts from lnwire.Vertex to Vertex
+	// and vice versa
+	reversedRoute := make([]Vertex, len(msg.Route))
+	for i := len(reversedRoute)/2 - 1; i >= 0; i-- {
+		opp := len(reversedRoute) - 1 - i
+		reversedRoute[i], reversedRoute[opp] = Vertex(msg.Route[opp]), Vertex(msg.Route[i])
+		msg.Route[i], msg.Route[opp] = msg.Route[opp], msg.Route[i]
+	}
+	if len(reversedRoute)%2 == 1 {
+		reversedRoute[len(reversedRoute)/2] = Vertex(msg.Route[len(reversedRoute)/2])
+	}
+
+	// update state in the per destination table
+	//if msg.Error != 1 {
+		//r.updateDestRouteBalances(msg, reversedRoute)
+	//}
+	// FIXME: !!!!Do something her!!!!!!
+
+	dest := reversedRoute[len(reversedRoute)-1]
+
+	// if destination has any more outstanding payments send out a new probe
+	if numPayments, ok := r.missionControl.paymentsPerDest.Load(dest); ok && numPayments.(int) > 0 {
+		time.Sleep(defaultProbeInterval)
+
+		// reset entries in the probe message
+		msg.HopNum = 0
+		msg.ProbeCompleted = 0
+		msg.CurrentNode = msg.Sender
+		msg.Error = 0
+		/// FIXME: what should we do here??
+		//for i := range msg.RouterChannelBalances {
+			//msg.RouterChannelBalances[i] = 0
+		//}
+
+		// send the probe to the first hop which will propagate it onwards
+		if sendNewProbe {
+			r.cfg.SendProbeToFirstHopLP(msg)
+		}
 	}
 }
 
