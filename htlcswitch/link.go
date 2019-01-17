@@ -255,6 +255,14 @@ type channelLink struct {
   //upstreamFirebaseConn *firego.Firebase
   //upstreamFirebaseConnMutex sync.Mutex
 
+	// lp routing
+	x_local uint32
+	mu_local float32
+	mu_remote float32
+	lambda float32
+	N uint64		// number of transactions since the last UpdatePriceProbe
+	capacity float32
+
 	// The following fields are only meant to be used *atomically*
 	started  int32
 	shutdown int32
@@ -403,6 +411,29 @@ func NewChannelLink(cfg ChannelLinkConfig,
   //}
 //}
 
+func (l *channelLink) periodicUpdatePriceProbe()  {
+	time.Sleep(time.Duration(10) * time.Second)
+	debug_print("going to start periodicUpdatePriceProbe after waiting 10 seconds\n")
+	for {
+		// FIXME: maybe this should not be uint32?
+		l.x_local = uint32(float64(l.N) / float64(T_UPDATE))
+		msg := &lnwire.UpdatePriceProbe {
+			ChanID: l.ChanID(),
+			X_Remote : l.x_local,
+		}
+		debug_print("going to send update price probe to peer!\n")
+
+		if err := l.cfg.Peer.SendMessage(true, msg); err != nil {
+			debug_print("periodicUpdatePriceProbe failed!\n")
+			debug_print(fmt.Sprintf("err is: %v!\n", err))
+			debug_print(fmt.Sprintf("err is: %x!\n", err))
+		}
+		l.N = 0.00
+		// send latest value of x_local to peer
+		time.Sleep(time.Duration(T_UPDATE) * time.Second)
+	}
+}
+
 func (l *channelLink) updateFirebase()  {
 	switchKey := l.cfg.Switch.getSwitchKey()
 	chanID := fmt.Sprintf("%v", l.ShortChanID())
@@ -424,6 +455,7 @@ func (l *channelLink) updateFirebase()  {
 		sent := fmt.Sprintf("%v", snapshot.TotalMSatSent)
 		rcvd := fmt.Sprintf("%v", snapshot.TotalMSatReceived)
 		capacity := fmt.Sprintf("%v", snapshot.Capacity)
+		debug_print(fmt.Sprintf("capacity is: %s\n", capacity))
 		//chainHash := fmt.Sprintf("%v", snapshot.ChainHash)
 		locBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.LocalBalance)
 		remBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.RemoteBalance)
@@ -535,6 +567,18 @@ func (l *channelLink) Start() error {
                 //"/paths/upstream/" + switchKey + "/" + chanID, nil)
     //l.upstreamPathStats = make([]string, 0)
     //l.downstreamPathStats = make([]string, 0)
+	}
+
+	if (LP_ROUTING) {
+		go l.periodicUpdatePriceProbe()
+		// initialize all the relevant variables
+		l.x_local = 0
+		l.mu_local = 0.00
+		l.mu_remote = 0.00
+		l.lambda = 0.00
+		l.N = 0
+		// FIXME: need to change this to real value
+		l.capacity = 1.00
 	}
 
 	log.Infof("ChannelLink(%v) is starting", l)
@@ -1641,6 +1685,37 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			"assigning index: %v", msg.PaymentHash[:], index)
 		debug_print(fmt.Sprintf("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v\n", msg.PaymentHash[:], index))
+		// FIXME pari: is this the best place to update this?
+		if (LP_ROUTING) {
+			debug_print(fmt.Sprintf("updating N, old value: %d\n", l.N))
+			l.N += uint64(msg.Amount)
+			debug_print(fmt.Sprintf("new N value: %d\n", l.N))
+		}
+	case *lnwire.UpdatePriceProbe:
+		if (LP_ROUTING) {
+			debug_print("got update price probe!!!!\n")
+			// based on the specifications, we need to do the following:
+			//Read the remote rate $x_remote$ from the message.
+			//Update $\lambda$, $mu_local$ and $mu_remote$ as follows:
+			//\lambda = max((\lambda + \eta (x_{local} + x_{remote} - (C / \delta))), 0)
+			//\mu_local = max((\mu_local + \kappa(x_{local} - x_{remote})), 0)
+			//\mu_remote = max((\mu_remote + \kappa(x_{remote} - x_{local})), 0)
+			x_remote := msg.X_Remote
+			debug_print(fmt.Sprintf("x remote: %d, x_local: %d\n", x_remote, l.x_local))
+			l.lambda = l.lambda + ETA * (float32(l.x_local + x_remote) - (l.capacity / DELTA))
+			if (l.lambda < 0.00) {
+				l.lambda = 0.00
+			}
+			l.mu_local = l.mu_local + KAPPA * float32(l.x_local - x_remote)
+			if (l.mu_local < 0.00) {
+				l.mu_local = 0.00
+			}
+			l.mu_remote = l.mu_remote + KAPPA * float32(x_remote - l.x_local)
+			if (l.mu_remote < 0.00) {
+				l.mu_remote = 0.00
+			}
+			debug_print(fmt.Sprintf("lambda: %d, mu_local: %d, mu_remote: %d\n", l.lambda, l.mu_local, l.mu_remote))
+		}
 
 	case *lnwire.UpdateFulfillHTLC:
 		debug_print(fmt.Sprintf("UpdateFulfillHTLC in chan: %s\n", l.shortChanID))

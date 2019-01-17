@@ -1046,6 +1046,10 @@ out:
 		case *lnwire.UpdateAddHTLC:
 			isChanUpdate = true
 			targetChan = msg.ChanID
+		case *lnwire.UpdatePriceProbe:
+			peerLog.Infof("UpdatePriceProbe\n")
+			isChanUpdate = true
+			targetChan = msg.ChanID
 		case *lnwire.UpdateFulfillHTLC:
 			isChanUpdate = true
 			targetChan = msg.ChanID
@@ -1159,6 +1163,9 @@ func messageSummary(msg lnwire.Message) string {
 	case *lnwire.UpdateAddHTLC:
 		return fmt.Sprintf("chan_id=%v, id=%v, amt=%v, expiry=%v, hash=%x",
 			msg.ChanID, msg.ID, msg.Amount, msg.Expiry, msg.PaymentHash[:])
+
+	case *lnwire.UpdatePriceProbe:
+		return fmt.Sprintf("X_Remote=%v", msg.X_Remote)
 
 	case *lnwire.UpdateFailHTLC:
 		return fmt.Sprintf("chan_id=%v, id=%v, reason=%x", msg.ChanID,
@@ -2143,6 +2150,7 @@ func (p *peer) SendMessage(sync bool, msgs ...lnwire.Message) error {
 	// Add all incoming messages to the outgoing queue. A list of error
 	// chans is populated for each message if the caller requested a sync
 	// send.
+	peerLog.Infof("SendMessage!\n")
 	var errChans []chan error
 	for _, msg := range msgs {
 		// If a sync send was requested, create an error chan to listen
