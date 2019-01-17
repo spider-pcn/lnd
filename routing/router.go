@@ -382,7 +382,6 @@ func (r *ChannelRouter) updateDestRouteBalances(msg *lnwire.ProbeRouteChannelBal
 }
 
 /// Copy of HandleCompletedProbe.
-/// FIXME: need to do different stuff here
 func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPrices, sendNewProbe bool) {
 	// reverse the route because probe comes back reversed
 	// create a new array of type Vertex also to avoid casts from lnwire.Vertex to Vertex
@@ -397,33 +396,13 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 		reversedRoute[len(reversedRoute)/2] = Vertex(msg.Route[len(reversedRoute)/2])
 	}
 
-	// update state in the per destination table
-	//if msg.Error != 1 {
-		//r.updateDestRouteBalances(msg, reversedRoute)
-	//}
-	// FIXME: !!!!Do something her!!!!!!
-
 	dest := reversedRoute[len(reversedRoute)-1]
 
-	// if destination has any more outstanding payments send out a new probe
-	if numPayments, ok := r.missionControl.paymentsPerDest.Load(dest); ok && numPayments.(int) > 0 {
-		time.Sleep(defaultProbeInterval)
-
-		// reset entries in the probe message
-		msg.HopNum = 0
-		msg.ProbeCompleted = 0
-		msg.CurrentNode = msg.Sender
-		msg.Error = 0
-		/// FIXME: what should we do here??
-		//for i := range msg.RouterChannelBalances {
-			//msg.RouterChannelBalances[i] = 0
-		//}
-
-		// send the probe to the first hop which will propagate it onwards
-		if sendNewProbe {
-			r.cfg.SendProbeToFirstHopLP(msg)
-		}
-	}
+	// update the lp route info
+	routeInfoEntry := (*r.missionControl.LPRouteInfoPerDest[dest])[msg.PathID]
+	// TODO(leiy): compute the rate, instead of using 0.0
+	routeInfoEntry.rate = 0.0
+	log.Infof("updated rate")
 }
 
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
@@ -1928,17 +1907,13 @@ type LPRouteInfo struct {
 // passes its LPRouteInfo object through the "notifier" channel to the
 // handleLPPaymentToDest goroutine, expecting that goroutine will supply
 // a payment request to our "acceptor".
-func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, notifier chan LPRouteInfo) *LPRouteInfo{
+func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, notifier chan LPRouteInfo) *LPRouteInfo{
 	path := LPRouteInfo {
 		// we set the path to be ready when we init the path
 		route: route,
 		ready:    time.NewTimer(0),
 		acceptor: make(chan LPPayment),
 	}
-	// start probing the path
-	// TODO(leiy): we won't stop probing before sigcomm
-	stopProbing := make(chan int)
-	go r.startLPProbing(dest, route, stopProbing)
 
 	go func() {
 		// main loop
@@ -1981,7 +1956,7 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, notifier chan LP
 
 // handleLPPaymentToDest handles everything related to LP payments to the dest
 // TODO(leiy): details
-func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) {
+func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) *[]*LPRouteInfo {
 	// first, get the LPPayment queue from missionControl
 	r.missionControl.paymentQueueMutex.Lock()
 	q := r.missionControl.paymentQueuePerDest[dest]
@@ -1992,6 +1967,11 @@ func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) {
 
 	// then, init data structures to store per-route info of routes to this dest
 	var paths []*LPRouteInfo
+	// add the paths to mission control
+	r.missionControl.LPRouteInfoMutex.Lock()
+	r.missionControl.LPRouteInfoPerDest[dest] = &paths
+	r.missionControl.LPRouteInfoMutex.Unlock()
+
 	// We don't fill the paths for now, but rather wait for the first payment
 	// to come in. This is a hack, in order to overcome the fact that the
 	// RequestKShortestPaths function requires a payment parameter
@@ -2010,8 +1990,13 @@ func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) {
 					// TODO(leiy): return error through p.result
 					continue
 				}
-				for _, shortPath := range kShortest {
-					paths = append(paths, r.startLPRoute(dest, shortPath, nextAvailable))
+				for i, shortPath := range kShortest {
+					// start path handler and add to paths
+					paths = append(paths, r.startLPRoute(dest, shortPath, uint32(i), nextAvailable))
+					// start probing the path
+					// TODO(leiy): we won't stop probing before sigcomm
+					stopProbing := make(chan int)
+					go r.startLPProbing(dest, shortPath, uint32(i), stopProbing)
 				}
 				pathsInited = true
 			}
@@ -2022,6 +2007,7 @@ func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) {
 			availablePath.acceptor <- p
 		}
 	}
+	return &paths
 }
 
 // sendPaymentAsPerWaterfilling takes in a set of routes to the destination and their associated balances
@@ -2102,7 +2088,7 @@ func (r *ChannelRouter) convertRouteToVertex(route *Route) []Vertex {
 }
 
 // startLPProbing starts probing a certain path (route)
-func (r *ChannelRouter) startLPProbing(dest Vertex, route *Route, stop chan int) {
+func (r *ChannelRouter) startLPProbing(dest Vertex, route *Route, pathID uint32, stop chan int) {
 	// set up a ticker to fire every defaultProbeInterval
 	ticker := time.NewTicker(defaultProbeInterval)
 	for {
@@ -2112,7 +2098,7 @@ func (r *ChannelRouter) startLPProbing(dest Vertex, route *Route, stop chan int)
 			ticker.Stop()
 			return
 		case <-ticker.C:
-			// TODO(leiy): probe once
+			r.initiateProbeLP(route, pathID)
 		}
 	}
 }

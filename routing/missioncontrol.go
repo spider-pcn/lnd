@@ -83,6 +83,9 @@ type missionControl struct {
 	// a queue of pending transactions to that specific destination.
 	paymentQueuePerDest map[Vertex](chan LPPayment)
 	paymentQueueMutex *sync.Mutex
+
+	LPRouteInfoPerDest map[Vertex](*[]*LPRouteInfo)
+	LPRouteInfoMutex  *sync.Mutex
 }
 
 type RouteInfo struct {
@@ -123,6 +126,8 @@ func newMissionControl(g *channeldb.ChannelGraph, selfNode *channeldb.LightningN
 		graph:          g,
 		paymentQueueMutex: &sync.Mutex{},
 		paymentQueuePerDest: make(map[Vertex](chan LPPayment)),
+		LPRouteInfoPerDest: make(map[Vertex](*[]*LPRouteInfo)),
+		LPRouteInfoMutex: &sync.Mutex{},
 	}
 }
 
