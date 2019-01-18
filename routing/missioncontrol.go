@@ -102,6 +102,7 @@ type LPPayment struct {
 	result      chan LPPaymentResult	// Channel to notify the SendSpider
 						// invocation thad added this payment
 						// to the queue. 0 means succeeded.
+	timeout     chan bool
 }
 
 type LPPaymentResult struct {
