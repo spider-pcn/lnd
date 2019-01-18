@@ -398,12 +398,25 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 		reversedRoute[len(reversedRoute)/2] = Vertex(msg.Route[len(reversedRoute)/2])
 	}
 
-	dest := reversedRoute[len(reversedRoute)-1]
 
 	// update the lp route info
-	routeInfoEntry := (*r.missionControl.LPRouteInfoPerDest[dest])[msg.PathID]
 	// TODO(leiy): compute the rate, instead of using 0.0
-	routeInfoEntry.rate = 0.0
+	/*
+	dest := reversedRoute[len(reversedRoute)-1]
+
+	routeInfoEntry := (*r.missionControl.LPRouteInfoPerDest[dest])[msg.PathID]
+	totalPrice := 0
+	for _, segmentPrice := range msg.RouterChannelPrices {
+		totalPrice += segmentPrice
+	}
+	oldRate := routeInfoEntry.rate
+	ALPHA := 0.5
+	nextRate := oldRate + ALPHA * (1 - totalPrice)
+	if nextRate <= 0 {
+		nextRate = 0
+	}
+	routeInfoEntry.rate = nextRate
+	*/
 	log.Infof("updated LP rate")
 }
 
@@ -1709,6 +1722,7 @@ type LightningPayment struct {
 	RouteHints [][]HopHint
 
 	// TODO(roasbeef): add e2e message?
+	Timedout bool
 }
 
 // SendPayment attempts to send a payment as described within the passed
@@ -1877,6 +1891,7 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			// if the queue is not there, create a queue and start
 			// a goroutine to handle this queue (destiniation)
 			log.Infof("Starting per-dest payment dispatcher")
+			// TODO(leiy): what if some transactions timed out while staying in this channel? we can add a flag indicating whether it has been withdrawaled. if so, the per-path goroutine will just pass this txn and ask for the next to process.
 			r.missionControl.paymentQueuePerDest[dest] = make(chan LPPayment, 100)
 			r.missionControl.paymentQueuePerDest[dest] <- LPPay
 			go r.handleLPPaymentToDest(dest)
@@ -1948,7 +1963,8 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 				}(path.route, payment)
 
 				// TODO(leiy): set timer for the next txn
-				path.ready.Reset(0)
+				// lastSize := payment.payment.Amount
+				path.ready.Reset(1)
 			}
 		}
 	}()
@@ -1985,6 +2001,12 @@ func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) *[]*LPRouteInfo {
 	for {
 		select {
 		case p := <-q:
+			if p.payment.Timedout == true {
+				// if this payment has been timed out
+				// then break the select and wait for next pay
+				// TODO(leiy): return time out error through p.result
+				continue
+			}
 			if pathsInited == false {
 				kShortest, err := r.getKShortestPaths(dest, p.payment)
 				if err != nil {
