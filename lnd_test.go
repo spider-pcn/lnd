@@ -4020,11 +4020,8 @@ func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32
 					// paymentTimeoutWrapper is a simple wrapper over paymentCreator, which
 					// adds local timeout to the payment.
 					paymentTimeoutWrapper := func(i int) {
-						// The payment will timeout after 200 seconds.
-						// TODO(leiy): we don't need time out here for now
-						// since LP has time-out built-in, and won't make payments
-						// linger for too long
-						timeout := time.After(time.Duration(200) * time.Second)
+						// The payment will timeout after 30 seconds.
+						timeout := time.After(time.Duration(30) * time.Second)
 						// One more goroutine to wait for
 						tranwg.Add(1)
 						atomic.AddUint64(&atomicTried[i], 1)
@@ -4075,8 +4072,6 @@ func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32
 								sendok <- 1 // local api failure
 							} else if payresp.PaymentError != "" {
 								switch payresp.PaymentError {
-									case "Payment is in queue for too long and timed out by LP sender":
-										sendok <- 3 // LP in-queue for too long
 									case "Payment can not be queued due to full buffer, and timed out by LP sender":
 										sendok <- 4 // LP full queue buffer
 									default:
@@ -4095,10 +4090,6 @@ func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32
 							case 2:
 								mux.Lock()
 								fmt.Printf("%v->%v: failed\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
-								mux.Unlock()
-							case 3:
-								mux.Lock()
-								fmt.Printf("%v->%v: lp in-queue timeout\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
 								mux.Unlock()
 							case 4:
 								mux.Lock()

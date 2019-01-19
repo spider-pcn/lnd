@@ -1879,7 +1879,6 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 		LPPay := LPPayment {
 			payment: payment,
 			result: make(chan LPPaymentResult),
-			timeout: make(chan bool),
 		}
 		// Try to access (or create) the corresponding queue.
 		// First, lock the dest-queue map.
@@ -1893,7 +1892,6 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			case q <- LPPay:
 				log.Debugf("Payment added to the queue, queue size is %v", len(q))
 			default:
-				LPPay.timeout <- true
 				log.Debugf("Declining sending payment due to full queue")
 				return [32]byte{}, nil, errors.New("Payment can not be queued due to full buffer, and timed out by LP sender")
 			}
@@ -1902,7 +1900,13 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			// a goroutine to handle this queue (destiniation)
 			log.Infof("Starting per-dest payment dispatcher")
 			// TODO(leiy): what if some transactions timed out while staying in this channel? we can add a flag indicating whether it has been withdrawaled. if so, the per-path goroutine will just pass this txn and ask for the next to process.
-			r.missionControl.paymentQueuePerDest[dest] = make(chan LPPayment, 100)
+			// Here the size of the payment queue is kept small (3 in this case)
+			// it is because we are tail-dropping payments in case of a full buffer,
+			// since there is no point to accept payments that we won't have time to process
+			// TODO(leiy): the channel size should at least be the same as the "K" in K-shortest path
+			// since we want to ensure each path have work to do when it is able to.
+			// 10 may be a good choice in real experiments
+			r.missionControl.paymentQueuePerDest[dest] = make(chan LPPayment, 3)
 			r.missionControl.paymentQueuePerDest[dest] <- LPPay
 			// unlock the dest-queue map
 			r.missionControl.paymentQueueMutex.Unlock()
@@ -1910,15 +1914,8 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 		}
 
 		// then we just block on the completed channel and wait for results
-		// either wait for 5 seconds, or time out the payment so it won't be processed
 		select {
 		case payRes := <-LPPay.result:
-			return payRes.preImage, payRes.route, payRes.err
-		case <-time.After(time.Duration(5) * time.Second):
-			// time out the payment by setting the flag
-			LPPay.timeout <- true
-			// we still need to wait for the payment to be timed out
-			payRes := <-LPPay.result
 			return payRes.preImage, payRes.route, payRes.err
 		}
 	}
@@ -2049,16 +2046,6 @@ func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) *[]*LPRouteInfo {
 				// use this path
 				log.Debugf("Payment dispatched to per-path handler, queue size is %v", len(q))
 				availablePath.acceptor <- p
-			case <-p.timeout:
-				// if this payment has been timed out
-				// then break the select and wait for next pay
-				log.Debugf("Payment has been timed out, dequeuing, queue size is %v", len(q))
-				result := LPPaymentResult {
-					preImage: [32]byte{},
-					route: nil,
-					err: errors.New("Payment is in queue for too long and timed out by LP sender"),
-				}
-				p.result <- result
 			}
 		}
 	}
