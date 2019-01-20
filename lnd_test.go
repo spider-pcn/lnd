@@ -12535,12 +12535,12 @@ type testCase struct {
 
 var testsCases = []*testCase{
 	{
-		name: "test spider LP routing",
-		test: testSpiderLP,
-	},
-	{
 		name: "test spider shortest path routing",
 		test: testSpiderShortestPath,
+	},
+	{
+		name: "test spider LP routing",
+		test: testSpiderLP,
 	},
 	{
 		name: "test spider WF routing",

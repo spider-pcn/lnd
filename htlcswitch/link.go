@@ -493,9 +493,11 @@ func (l *channelLink) updateFirebase()  {
     }
     if (new_data || i < EXP_TIME+5) {
       debug_print("will send new data to firebase\n")
-      if _, err := fb.Push(vals); err != nil {
-        fmt.Println("error when logging to firebase")
-      }
+			go func() {
+				if _, err := fb.Push(vals); err != nil {
+					fmt.Println("error when logging to firebase")
+				}
+			}()
     } else {
       //l.logAggregateStatsFb()
       debug_print("no new data to send to firebase\n")
