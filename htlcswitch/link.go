@@ -240,10 +240,10 @@ type ChannelLinkConfig struct {
 // switch. Additionally, the link encapsulate logic of commitment protocol
 // message ordering and updates.
 type channelLink struct {
-  //downstreamPathStats []string
-  //downstreamPathStatsLock sync.Mutex
-  //upstreamPathStats []string
-  //upstreamPathStatsLock sync.Mutex
+	downstreamPathStats []string
+	downstreamPathStatsLock sync.Mutex
+	upstreamPathStats []string
+	upstreamPathStatsLock sync.Mutex
 
   // long-lived firebase connections
   //successFirebaseConn *firego.Firebase
@@ -413,16 +413,17 @@ func NewChannelLink(cfg ChannelLinkConfig,
 //}
 
 func (l *channelLink) periodicUpdatePriceProbe()  {
-	time.Sleep(time.Duration(10) * time.Second)
+	//time.Sleep(time.Duration(10) * time.Second)
 	debug_print("going to start periodicUpdatePriceProbe after waiting 10 seconds\n")
 	for {
 		// FIXME: maybe this should not be uint32?
+		log.Infof("LP: l.N value is %d\n", l.N)
 		l.x_local = uint64(float64(l.N) / float64(T_UPDATE))
 		msg := &lnwire.UpdatePriceProbe {
 			ChanID: l.ChanID(),
 			X_Remote : l.x_local,
 		}
-		log.Infof("LP: going to send update price probe to peer!\n")
+		log.Infof("LP: going to send update, with x = %d\n", l.x_local)
 
 		if err := l.cfg.Peer.SendMessage(true, msg); err != nil {
 			log.Infof("LP: periodicUpdatePriceProbe failed!\n")
@@ -445,6 +446,7 @@ func (l *channelLink) updateFirebase()  {
     debug_print("could not read the $EXP_TIME environment variable\n")
     return
   }
+	loggedPaths := false
 	for {
     debug_print(fmt.Sprintf("updateFirebase: i = %d\n", i))
 		// going to store queue information, for this particular channel.
@@ -497,6 +499,20 @@ func (l *channelLink) updateFirebase()  {
     } else {
       //l.logAggregateStatsFb()
       debug_print("no new data to send to firebase\n")
+			if (!loggedPaths) {
+				debug_print("going to log path information for fb\n")
+				fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
+																		switchKey + "/"+ chanID + "/upstream/", nil)
+				fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
+																		switchKey + "/"+ chanID + "/downstream/", nil)
+				if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
+					debug_print("error when logging upstream paths to firebase")
+				}
+				if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
+					debug_print("error when logging upstream paths to firebase")
+				}
+				loggedPaths = true
+			}
     }
     oldVals = curVals
 		i += 1
@@ -565,8 +581,8 @@ func (l *channelLink) Start() error {
                 //"/paths/downstream/" + switchKey + "/" + chanID, nil)
     //l.upstreamFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
                 //"/paths/upstream/" + switchKey + "/" + chanID, nil)
-    //l.upstreamPathStats = make([]string, 0)
-    //l.downstreamPathStats = make([]string, 0)
+		l.upstreamPathStats = make([]string, 0)
+		l.downstreamPathStats = make([]string, 0)
 	}
 
 	if (LP_ROUTING) {
@@ -1426,9 +1442,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
         //}
         //l.downstreamFirebaseConnMutex.Unlock()
       //}()
-      //l.downstreamPathStatsLock.Lock()
-      //l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
-      //l.downstreamPathStatsLock.Unlock()
+			l.downstreamPathStatsLock.Lock()
+			l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
+			l.downstreamPathStatsLock.Unlock()
       // Method 3:
       //val := fmt.Sprintf("%x", htlc.PaymentHash[:])
       //l.downstreamFirebaseConnMutex.Lock()
@@ -1656,6 +1672,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 	switch msg := msg.(type) {
 
 	case *lnwire.UpdateAddHTLC:
+		log.Infof("LP: UpdateAddHTLC\n")
 		// We just received an add request from an upstream peer, so we
 		// add it to our state machine, then add the HTLC to our
 		// "settle" list in the event that we know the preimage.
@@ -1675,9 +1692,10 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
         //}
         //l.upstreamFirebaseConnMutex.Unlock()
       //}()
-      //l.upstreamPathStatsLock.Lock()
-      //l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
-      //l.upstreamPathStatsLock.Unlock()
+			// method 2:
+			l.upstreamPathStatsLock.Lock()
+			l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
+			l.upstreamPathStatsLock.Unlock()
       //val := fmt.Sprintf("%x", msg.PaymentHash[:])
       //l.upstreamFirebaseConnMutex.Lock()
       //debug_print(fmt.Sprintf("upstream val: %s\n", val))
@@ -1686,13 +1704,13 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v", msg.PaymentHash[:], index)
-		debug_print(fmt.Sprintf("Receive upstream htlc with payment hash(%x), "+
+		log.Infof(fmt.Sprintf("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v\n", msg.PaymentHash[:], index))
 		// FIXME pari: is this the best place to update this?
 		if (LP_ROUTING) {
-			debug_print(fmt.Sprintf("updating N, old value: %d\n", l.N))
+			log.Infof("updating N, old value: %d\n", l.N)
 			l.N += uint64(msg.Amount)
-			debug_print(fmt.Sprintf("new N value: %d\n", l.N))
+			log.Infof("new N value: %d\n", l.N)
 		}
 	case *lnwire.UpdatePriceProbe:
 		if (LP_ROUTING) {
@@ -2174,9 +2192,10 @@ func (l *channelLink) Bandwidth() lnwire.MilliSatoshi {
 func (l *channelLink) LP_Price() lnwire.MilliSatoshi {
 	// FIXME: need to verify the types. does this work??
 	// equation from the specs: (2 * \lambda) + \mu_local  - \mu_remote
-	price := lnwire.MilliSatoshi((2 * l.lambda) + l.mu_local - l.mu_remote)
-	log.Infof("LP: LP price = %d\n", price)
-	return price
+	price := (2 * l.lambda) + l.mu_local - l.mu_remote
+	log.Infof("LP: uint price = %d\n", price)
+	log.Infof("LP: millisatoshi price = %d\n", price)
+	return lnwire.MilliSatoshi(price)
 }
 
 // AttachMailBox updates the current mailbox used by this link, and hooks up
