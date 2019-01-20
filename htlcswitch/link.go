@@ -1435,7 +1435,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			}
 		}
 
-    //if (LOG_FIREBASE) {
+		if (LOG_FIREBASE) {
       //go func() {
         // val := fmt.Sprintf("%x", htlc.PaymentHash[:])
         //l.downstreamFirebaseConnMutex.Lock()
@@ -1444,15 +1444,15 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
         //}
         //l.downstreamFirebaseConnMutex.Unlock()
       //}()
-			l.downstreamPathStatsLock.Lock()
+			//l.downstreamPathStatsLock.Lock()
 			l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
-			l.downstreamPathStatsLock.Unlock()
+			//l.downstreamPathStatsLock.Unlock()
       // Method 3:
       //val := fmt.Sprintf("%x", htlc.PaymentHash[:])
       //l.downstreamFirebaseConnMutex.Lock()
       //debug_print(fmt.Sprintf("downstream val: %s\n", val))
       //l.downstreamFirebaseConnMutex.Unlock()
-    //}
+		}
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
 			"local_log_index=%v, batch_size=%v",
@@ -1685,7 +1685,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			return
 		}
 
-    //if (LOG_FIREBASE) {
+		if (LOG_FIREBASE) {
       //go func() {
         //val := fmt.Sprintf("%x", msg.PaymentHash[:])
         //l.upstreamFirebaseConnMutex.Lock()
@@ -1695,14 +1695,14 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
         //l.upstreamFirebaseConnMutex.Unlock()
       //}()
 			// method 2:
-			l.upstreamPathStatsLock.Lock()
+			//l.upstreamPathStatsLock.Lock()
 			l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
-			l.upstreamPathStatsLock.Unlock()
+			//l.upstreamPathStatsLock.Unlock()
       //val := fmt.Sprintf("%x", msg.PaymentHash[:])
       //l.upstreamFirebaseConnMutex.Lock()
       //debug_print(fmt.Sprintf("upstream val: %s\n", val))
       //l.upstreamFirebaseConnMutex.Unlock()
-    //}
+		}
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v", msg.PaymentHash[:], index)
