@@ -501,20 +501,20 @@ func (l *channelLink) updateFirebase()  {
     } else {
       //l.logAggregateStatsFb()
       debug_print("no new data to send to firebase\n")
-			//if (!loggedPaths) {
-				//debug_print("going to log path information for fb\n")
-				//fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
-																		//switchKey + "/"+ chanID + "/upstream/", nil)
-				//fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
-																		//switchKey + "/"+ chanID + "/downstream/", nil)
-				//if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
-					//debug_print("error when logging upstream paths to firebase")
-				//}
-				//if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
-					//debug_print("error when logging upstream paths to firebase")
-				//}
-				//loggedPaths = true
-			//}
+			if (!loggedPaths) {
+				debug_print("going to log path information for fb\n")
+				fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
+																		switchKey + "/"+ chanID + "/upstream/", nil)
+				fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
+																		switchKey + "/"+ chanID + "/downstream/", nil)
+				if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
+					debug_print("error when logging upstream paths to firebase")
+				}
+				if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
+					debug_print("error when logging upstream paths to firebase")
+				}
+				loggedPaths = true
+			}
     }
     oldVals = curVals
 		i += 1
@@ -1445,7 +1445,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
         //l.downstreamFirebaseConnMutex.Unlock()
       //}()
 			//l.downstreamPathStatsLock.Lock()
-			//l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
+			l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
 			//l.downstreamPathStatsLock.Unlock()
       // Method 3:
       //val := fmt.Sprintf("%x", htlc.PaymentHash[:])
@@ -1696,7 +1696,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
       //}()
 			// method 2:
 			//l.upstreamPathStatsLock.Lock()
-			//l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
+			l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
 			//l.upstreamPathStatsLock.Unlock()
       //val := fmt.Sprintf("%x", msg.PaymentHash[:])
       //l.upstreamFirebaseConnMutex.Lock()
