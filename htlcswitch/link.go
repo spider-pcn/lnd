@@ -491,7 +491,7 @@ func (l *channelLink) updateFirebase()  {
         }
       }
     }
-    if (new_data || i < EXP_TIME-20) {
+    if (new_data || i < EXP_TIME+10) {
       debug_print("will send new data to firebase\n")
 			go func() {
 				if _, err := fb.Push(vals); err != nil {
@@ -1674,7 +1674,6 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 	switch msg := msg.(type) {
 
 	case *lnwire.UpdateAddHTLC:
-		log.Infof("LP: UpdateAddHTLC\n")
 		// We just received an add request from an upstream peer, so we
 		// add it to our state machine, then add the HTLC to our
 		// "settle" list in the event that we know the preimage.
