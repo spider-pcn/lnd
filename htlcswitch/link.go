@@ -526,6 +526,13 @@ func (l *channelLink) updateFirebase()  {
 // Queue is lower than the available balance, and then wake up the queue.
 func (l *channelLink) startQueueWatcher() {
 	// infinite loop.
+	SPIDER_QUEUE_UPDATE_TIME := os.Getenv("SPIDER_QUEUE_UPDATE_TIME")
+	SLEEP_DURATION := 100
+	if (SPIDER_QUEUE_UPDATE_TIME != "") {
+		// update sleep duration
+		TMP, _ := strconv.Atoi(SPIDER_QUEUE_UPDATE_TIME)
+		SLEEP_DURATION = TMP
+	}
 	for {
 		channelAmt := l.channel.AvailableBalance()
 		minOverflowAmt := l.overflowQueue.MinHtlcAmount()
@@ -542,7 +549,7 @@ func (l *channelLink) startQueueWatcher() {
 			debug_print(fmt.Sprintf("current queue len at this node is: %d\n", l.overflowQueue.queueLen))
 			l.overflowQueue.SignalFreeSlot()
 		}
-		time.Sleep(500*time.Millisecond)
+		time.Sleep(time.Duration(SLEEP_DURATION)*time.Millisecond)
 	}
 }
 
