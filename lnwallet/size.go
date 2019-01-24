@@ -184,7 +184,7 @@ const (
 	// of a contract breach, the punishment transaction is able to sweep
 	// all the HTLC's yet still remain below the widely used standard
 	// weight limits.
-	MaxHTLCNumber = 966
+	MaxHTLCNumber = 96600
 
 	// ToLocalScriptSize 79 bytes
 	//      - OP_IF: 1 byte
