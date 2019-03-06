@@ -42,6 +42,8 @@ const (
 	defaultProbeInterval = time.Duration(time.Millisecond * 100)
 )
 
+const pathWindowSize = 10000
+
 const (
 	// Here each constant corrsponds to a Spider routing algorithm. Those
 	// consts are used across files to represent a specific algorithm to
@@ -1929,6 +1931,9 @@ type LPRouteInfo struct {
 	rate          float64		// txn per second
 	ready         *time.Timer	// timer indicating this path is ready
 	acceptor      chan LPPayment
+	window        lnwire.MilliSatoshi	// window size
+	inFlight      lnwire.MilliSatoshi	// amount in flight
+	inFlightMutex *sync.Mutex
 }
 
 // startLPRoute handles a path.
@@ -1945,6 +1950,9 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 		route: route,
 		ready:    time.NewTimer(0),
 		acceptor: make(chan LPPayment),
+		window: pathWindowSize,
+		inFlight: 0,
+		inFlightMutex: &sync.Mutex{},
 	}
 
 	go func() {
@@ -1952,30 +1960,48 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 		for {
 			select {
 			case <-path.ready.C:
-				// If timer fires, tell the handleLPPaymentToDest
-				// goroutine that we are ready for the next txn
-				// Note that it may block, since the size of notifier
-				// should be 1.
-				notifier <- path
+				// check the window size and in-flight amount
+				// if the latter is larget than the former, just skip this chance
+				path.inFlightMutex.Lock()
+				currentInFlight := path.inFlight
+				path.inFlightMutex.Unlock()
 
-				// then, wait for the payment to come
-				payment := <-path.acceptor
+				if currentInFlight < path.window {
+					// If timer fires, tell the handleLPPaymentToDest
+					// goroutine that we are ready for the next txn
+					// Note that it may block, since the size of notifier
+					// should be 1.
+					notifier <- path
 
-				// send the payment using a new goroutine
-				// we use a goroutine here because all txns through this path
-				// will be dispatched here. so we want them to be sent in
-				// parallel.
-				go func(route *Route, payment LPPayment) {
-					preImage, route, err := r.SendToRoute([]*Route{route}, payment.payment)
+					// then, wait for the payment to come
+					payment := <-path.acceptor
 
-					// return result through the channel
-					result := LPPaymentResult {
-						preImage: preImage,
-						route: route,
-						err: err,
-					}
-					payment.result <- result
-				}(path.route, payment)
+					// send the payment using a new goroutine
+					// we use a goroutine here because all txns through this path
+					// will be dispatched here. so we want them to be sent in
+					// parallel.
+					go func(route *Route, payment LPPayment) {
+						preImage, route, err := r.SendToRoute([]*Route{route}, payment.payment)
+
+						// return result through the channel
+						result := LPPaymentResult {
+							preImage: preImage,
+							route: route,
+							err: err,
+						}
+						payment.result <- result
+
+						// substract this txn from the inflight amt
+						path.inFlightMutex.Lock()
+						path.inFlight = path.inFlight - payment.payment.Amount
+						path.inFlightMutex.Unlock()
+					}(path.route, payment)
+
+					// add this txn to the inflight amount
+					path.inFlightMutex.Lock()
+					path.inFlight = path.inFlight + payment.payment.Amount
+					path.inFlightMutex.Unlock()
+				}
 
 				// TODO(leiy): set timer for the next txn. for now, we just set it to 5 sec
 				// to create some artificial congestion
