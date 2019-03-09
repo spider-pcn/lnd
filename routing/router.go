@@ -25,6 +25,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/multimutex"
 	"github.com/lightningnetwork/lnd/routing/chainview"
+	"os"
 )
 
 const (
@@ -42,7 +43,8 @@ const (
 	defaultProbeInterval = time.Duration(time.Millisecond * 100)
 )
 
-const pathWindowSize = 10000
+const defaultWindowSize = 10000
+var useWindows bool = os.Getenv("SPIDER_USE_WINDOWS") == "1"
 
 const (
 	// Here each constant corrsponds to a Spider routing algorithm. Those
@@ -1945,6 +1947,11 @@ type LPRouteInfo struct {
 // handleLPPaymentToDest goroutine, expecting that goroutine will supply
 // a payment request to our "acceptor".
 func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, notifier chan LPRouteInfo) *LPRouteInfo{
+	pathWindowSize := lnwire.MilliSatoshi(defaultWindowSize)
+	if (!useWindows) {
+		pathWindowSize = 10000000
+	}
+
 	path := LPRouteInfo {
 		// we set the path to be ready when we init the path
 		route: route,
@@ -2006,7 +2013,11 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 				// TODO(leiy): set timer for the next txn. for now, we just set it to 5 sec
 				// to create some artificial congestion
 				// lastSize := payment.payment.Amount
-				path.ready.Reset(time.Duration(5) * time.Second)
+				if (useWindows) {
+					path.ready.Reset(time.Duration(5) * time.Second)
+				} else {
+					path.ready.Reset(time.Duration(0) * time.Second)
+				}
 			}
 		}
 	}()
