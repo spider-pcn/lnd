@@ -492,10 +492,11 @@ func (l *channelLink) updateFirebase()  {
       }
     }
     if (new_data || i < EXP_TIME+10) {
-      debug_print("will send new data to firebase\n")
+      fmt.Println("will send new data to firebase\n")
 			go func() {
 				if _, err := fb.Push(vals); err != nil {
 					fmt.Println("error when logging to firebase")
+					fmt.Println(err);
 				}
 			}()
     } else {
