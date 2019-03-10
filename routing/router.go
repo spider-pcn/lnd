@@ -1949,7 +1949,7 @@ type LPRouteInfo struct {
 func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, notifier chan LPRouteInfo) *LPRouteInfo{
 	pathWindowSize := lnwire.MilliSatoshi(defaultWindowSize)
 	if (!useWindows) {
-		pathWindowSize = 10000000
+		pathWindowSize = 1000000000000
 	}
 
 	path := LPRouteInfo {

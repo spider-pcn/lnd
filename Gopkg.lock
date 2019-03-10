@@ -329,6 +329,14 @@
   revision = "1efa31f08b9333f1bd4882d61f9d668a70cd902e"
 
 [[projects]]
+  branch = "v1"
+  digest = "1:2bf910259b998c0ef31f741f2f0adff177013fa7dab7d2bb2f017cac0396e927"
+  name = "github.com/zabawaba99/firego"
+  packages = ["sync"]
+  pruneopts = "UT"
+  revision = "ce3fcf35d5c7d35453fd955280de6b0f95a83793"
+
+[[projects]]
   digest = "1:270627be1fb5b0875bdbf8a96f86a551adc0aeba97fb63af3caaa21c0a39c499"
   name = "golang.org/x/crypto"
   packages = [
@@ -481,6 +489,14 @@
   pruneopts = "UT"
   revision = "bed2a428da6e56d950bed5b41fcbae3141e5b0d0"
 
+[[projects]]
+  branch = "v1"
+  digest = "1:a119f21486e460bccd87a2af2e70c073f5bbb658fae89af4da51b0732cda1721"
+  name = "gopkg.in/zabawaba99/firego.v1"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "ce3fcf35d5c7d35453fd955280de6b0f95a83793"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
@@ -551,6 +567,7 @@
     "gopkg.in/macaroon-bakery.v2/bakery",
     "gopkg.in/macaroon-bakery.v2/bakery/checkers",
     "gopkg.in/macaroon.v2",
+    "gopkg.in/zabawaba99/firego.v1",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
