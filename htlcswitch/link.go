@@ -500,7 +500,7 @@ func (l *channelLink) updateFirebase()  {
 				}
 			}()
     } else {
-      //l.logAggregateStatsFb()
+			l.logAggregateStatsFb()
       debug_print("no new data to send to firebase\n")
 			//if (!loggedPaths) {
 				//debug_print("going to log path information for fb\n")
