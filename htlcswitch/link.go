@@ -396,6 +396,8 @@ func NewChannelLink(cfg ChannelLinkConfig,
 
 func (l *channelLink) updateAggregateStatsFirebase() {
 	vals := make(map[string] string)
+	debug_print("updateAggregateStatsFirebase!\n")
+	fmt.Println("updateAggregateStatsFirebase!")
 	for {
 		htlcHash, valid := <-l.successChan
 		if (!valid) {
