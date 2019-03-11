@@ -399,11 +399,12 @@ func (l *channelLink) updateAggregateStatsFirebase() {
 	for {
 		htlcHash, valid := <-l.successChan
 		if (!valid) {
+			fmt.Println("breaking out of updateAggregateStats loop!")
 			break
 		}
 		vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
 		if (len(vals) >= 10) {
-			debug_print("logging to firebase from link.go\n")
+			fmt.Println("logging to firebase from link.go")
 			if _, err := l.successFirebaseConn.Push(vals); err != nil {
 				debug_print("error when logging to firebase")
 			}
