@@ -2853,7 +2853,9 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
       if (LOG_FIREBASE) {
         // recording successful htlc payments
         // Method 4: send it over channel to separate goroutine
-        //l.successChan <- fmt.Sprintf("%x", pd.RHash)
+				l.successChan <- fmt.Sprintf("%x", pd.RHash)
+
+				/// older method:
         // we do this in a new goroutine so this doesn't hold up the rest of
         // the lnd stuff from functioning
         //go func() {
