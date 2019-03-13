@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"io"
 	"math"
+	"time"
 
 	"net"
 
@@ -76,6 +77,18 @@ func (a addressType) AddrLen() uint16 {
 // serialization.
 func writeElement(w io.Writer, element interface{}) error {
 	switch e := element.(type) {
+	case time.Duration:
+		var buf int64
+		buf = int64(e)
+		if err := binary.Write(w, binary.BigEndian, buf); err != nil {
+			return err
+		}
+	case time.Time:
+		var buf int64
+		buf = e.UnixNano()
+		if err := binary.Write(w, binary.BigEndian, buf); err != nil {
+			return err
+		}
 	case ShortChanIDEncoding:
 		var b [1]byte
 		b[0] = uint8(e)
@@ -461,6 +474,18 @@ func writeElements(w io.Writer, elements ...interface{}) error {
 func readElement(r io.Reader, element interface{}) error {
 	var err error
 	switch e := element.(type) {
+	case *time.Duration:
+		var buf int64
+		if err := binary.Read(r, binary.BigEndian, &buf); err != nil {
+			return err
+		}
+		*e = time.Duration(buf)
+	case *time.Time:
+		var buf int64
+		if err := binary.Read(r, binary.BigEndian, &buf); err != nil {
+			return err
+		}
+		*e = time.Unix(0, buf)
 	case *ShortChanIDEncoding:
 		var b [1]uint8
 		if _, err := r.Read(b[:]); err != nil {

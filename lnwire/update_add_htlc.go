@@ -1,6 +1,9 @@
 package lnwire
 
-import "io"
+import (
+	"io"
+	"time"
+)
 
 // OnionPacketSize is the size of the serialized Sphinx onion packet included
 // in each UpdateAddHTLC message. The breakdown of the onion packet is as
@@ -50,6 +53,12 @@ type UpdateAddHTLC struct {
 	// should strip off a layer of encryption, exposing the next hop to be
 	// used in the subsequent UpdateAddHTLC message.
 	OnionBlob [OnionPacketSize]byte
+
+	// When this message is crafted
+	Crafted time.Time
+
+	// Duration before this message times out
+	Timeout time.Duration
 }
 
 // NewUpdateAddHTLC returns a new empty UpdateAddHTLC message.
@@ -73,6 +82,8 @@ func (c *UpdateAddHTLC) Decode(r io.Reader, pver uint32) error {
 		c.PaymentHash[:],
 		&c.Expiry,
 		c.OnionBlob[:],
+		&c.Crafted,
+		&c.Timeout,
 	)
 }
 
@@ -88,6 +99,8 @@ func (c *UpdateAddHTLC) Encode(w io.Writer, pver uint32) error {
 		c.PaymentHash[:],
 		c.Expiry,
 		c.OnionBlob[:],
+		c.Crafted,
+		c.Timeout,
 	)
 }
 
@@ -105,5 +118,5 @@ func (c *UpdateAddHTLC) MsgType() MessageType {
 // This is part of the lnwire.Message interface.
 func (c *UpdateAddHTLC) MaxPayloadLength(uint32) uint32 {
 	// 1450
-	return 32 + 8 + 4 + 8 + 32 + 1366
+	return 32 + 8 + 4 + 8 + 32 + 1366 + 8 + 8
 }
