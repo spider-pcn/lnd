@@ -12,7 +12,8 @@ var LP_ROUTING bool = os.Getenv("SPIDER_LP_ROUTING") == "1"
 
 var DEBUG_FLAG bool = false
 var LOG_FIREBASE bool = os.Getenv("SPIDER_LOG_FIREBASE") == "1"
-var FIREBASE_URL string = "https://spider2.firebaseio.com/"
+//var FIREBASE_URL string = "https://spider2.firebaseio.com/"
+var FIREBASE_URL string = "https://spider3-b4420.firebaseio.com/"
 
 // globals required for LP routing 
 var ETA float32 = 0.5

@@ -246,9 +246,9 @@ type channelLink struct {
 	upstreamPathStatsLock sync.Mutex
 
   // long-lived firebase connections
-  //successFirebaseConn *firego.Firebase
+	successFirebaseConn *firego.Firebase
   //successFirebaseConnMutex sync.Mutex
-  //successChan chan string
+	successChan chan string
 
   //downstreamFirebaseConn *firego.Firebase
   //downstreamFirebaseConnMutex sync.Mutex
@@ -394,23 +394,26 @@ func NewChannelLink(cfg ChannelLinkConfig,
   //}
 //}
 
-//func (l *channelLink) updateAggregateStatsFirebase() {
-  //vals := make(map[string] string)
-  //for {
-    //htlcHash, valid := <-l.successChan
-    //if (!valid) {
-      //break
-    //}
-    //vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-    //if (len(vals) >= 10) {
-      //debug_print("logging to firebase from link.go\n")
-      //if _, err := l.successFirebaseConn.Push(vals); err != nil {
-        //debug_print("error when logging to firebase")
-      //}
-      //vals = make(map[string] string)
-    //}
-  //}
-//}
+func (l *channelLink) updateAggregateStatsFirebase() {
+	vals := make(map[string] string)
+	debug_print("updateAggregateStatsFirebase!\n")
+	fmt.Println("updateAggregateStatsFirebase!")
+	for {
+		htlcHash, valid := <-l.successChan
+		if (!valid) {
+			fmt.Println("breaking out of updateAggregateStats loop!")
+			break
+		}
+		vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
+		if (len(vals) >= 10) {
+			fmt.Println("logging to firebase from link.go")
+			if _, err := l.successFirebaseConn.Push(vals); err != nil {
+				debug_print("error when logging to firebase")
+			}
+			vals = make(map[string] string)
+		}
+	}
+}
 
 func (l *channelLink) periodicUpdatePriceProbe()  {
 	//time.Sleep(time.Duration(10) * time.Second)
@@ -492,14 +495,15 @@ func (l *channelLink) updateFirebase()  {
       }
     }
     if (new_data || i < EXP_TIME+10) {
-      debug_print("will send new data to firebase\n")
+      //fmt.Println("will send new data to firebase")
 			go func() {
 				if _, err := fb.Push(vals); err != nil {
 					fmt.Println("error when logging to firebase")
+					fmt.Println(err);
 				}
 			}()
     } else {
-      //l.logAggregateStatsFb()
+			//l.logAggregateStatsFb()
       debug_print("no new data to send to firebase\n")
 			//if (!loggedPaths) {
 				//debug_print("going to log path information for fb\n")
@@ -575,15 +579,15 @@ func (l *channelLink) Start() error {
 	if (LOG_FIREBASE) {
 		go l.updateFirebase()
 
-    //switchKey := l.cfg.Switch.getSwitchKey()
+		switchKey := l.cfg.Switch.getSwitchKey()
     // chanID := fmt.Sprintf("%v", l.ShortChanID())
 
     // which channel we receive the payment on shouldn't matter for computing
     // success / failure percentages
-    //l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
-                //"/aggregateStats/success/" + switchKey, nil)
-    //l.successChan = make(chan string, 10000)
-    //go l.updateAggregateStatsFirebase()
+		l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
+								"/aggregateStats/success/" + switchKey, nil)
+		l.successChan = make(chan string, 10000)
+		go l.updateAggregateStatsFirebase()
 
     // for paths:
     //l.downstreamFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
@@ -2849,7 +2853,9 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
       if (LOG_FIREBASE) {
         // recording successful htlc payments
         // Method 4: send it over channel to separate goroutine
-        //l.successChan <- fmt.Sprintf("%x", pd.RHash)
+				l.successChan <- fmt.Sprintf("%x", pd.RHash)
+
+				/// older method:
         // we do this in a new goroutine so this doesn't hold up the rest of
         // the lnd stuff from functioning
         //go func() {
