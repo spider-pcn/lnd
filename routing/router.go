@@ -2441,6 +2441,8 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			Amount:      route.TotalAmount,
 			Expiry:      route.TotalTimeLock,
 			PaymentHash: payment.PaymentHash,
+			Crafted:     time.Now(),
+			Timeout:     time.Duration(5 * time.Second),
 		}
 		copy(htlcAdd.OnionBlob[:], onionBlob)
 

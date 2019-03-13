@@ -1230,6 +1230,26 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 			return s.failAddPacket(packet, linkErr, addErr)
 		}
 
+		now := time.Now()
+		deadline := htlc.Crafted.Add(htlc.Timeout)
+		if deadline.Before(now) {
+			// timeout the transaction
+			var failure lnwire.FailureMessage
+			update, err := s.cfg.FetchLastChannelUpdate(
+				packet.outgoingChanID,
+			)
+			if err != nil {
+				failure = &lnwire.FailTemporaryNodeFailure{}
+			} else {
+				debug_print("failure xyz")
+				failure = lnwire.NewTemporaryChannelFailure(update)
+			}
+
+			addErr := fmt.Errorf("HTLC already timed out, crafted=%v, deadline=%v, now=%v", htlc.Crafted, deadline, now)
+
+			return s.failAddPacket(packet, failure, addErr)
+		}
+
 		// Send the packet to the destination channel link which
 		// manages the channel.
 		packet.outgoingChanID = destination.ShortChanID()
