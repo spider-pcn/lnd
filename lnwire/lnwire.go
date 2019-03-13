@@ -79,7 +79,7 @@ func writeElement(w io.Writer, element interface{}) error {
 	switch e := element.(type) {
 	case time.Duration:
 		var buf int64
-		buf = int64(e)
+		buf = e.Nanoseconds()
 		if err := binary.Write(w, binary.BigEndian, buf); err != nil {
 			return err
 		}
@@ -479,7 +479,7 @@ func readElement(r io.Reader, element interface{}) error {
 		if err := binary.Read(r, binary.BigEndian, &buf); err != nil {
 			return err
 		}
-		*e = time.Duration(buf)
+		*e = time.Duration(time.Duration(buf) * time.Nanosecond)
 	case *time.Time:
 		var buf int64
 		if err := binary.Read(r, binary.BigEndian, &buf); err != nil {
