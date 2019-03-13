@@ -2910,6 +2910,8 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					Expiry:      fwdInfo.OutgoingCTLV,
 					Amount:      fwdInfo.AmountToForward,
 					PaymentHash: pd.RHash,
+					Crafted:     pd.Crafted,
+					Timeout:     pd.SpiderTimeout,
 				}
 
 				// Finally, we'll encode the onion packet for
@@ -2951,6 +2953,8 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				Expiry:      fwdInfo.OutgoingCTLV,
 				Amount:      fwdInfo.AmountToForward,
 				PaymentHash: pd.RHash,
+				Crafted:     pd.Crafted,
+				Timeout:     pd.SpiderTimeout,
 			}
 
 			// Finally, we'll encode the onion packet for the

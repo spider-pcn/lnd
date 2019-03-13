@@ -9,6 +9,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -339,6 +340,10 @@ type PaymentDescriptor struct {
 	// isForwarded denotes if an incoming HTLC has been forwarded to any
 	// possible upstream peers in the route.
 	isForwarded bool
+
+	// for timeout
+	Crafted time.Time
+	SpiderTimeout time.Duration
 }
 
 // PayDescsFromRemoteLogUpdates converts a slice of LogUpdates received from the
@@ -379,6 +384,8 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Height: height,
 					Index:  uint16(i),
 				},
+				Crafted: wireMsg.Crafted,
+				SpiderTimeout: wireMsg.Timeout,
 			}
 			pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 			copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -1529,6 +1536,8 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			HtlcIndex:             wireMsg.ID,
 			LogIndex:              logUpdate.LogIndex,
 			addCommitHeightRemote: commitHeight,
+			SpiderTimeout:         wireMsg.Timeout,
+			Crafted:               wireMsg.Crafted,
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -2872,6 +2881,8 @@ func (lc *LightningChannel) createCommitDiff(
 				Amount:      pd.Amount,
 				Expiry:      pd.Timeout,
 				PaymentHash: pd.RHash,
+				Crafted:     pd.Crafted,
+				Timeout:     pd.SpiderTimeout,
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
@@ -4365,6 +4376,9 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 				Amount:      pd.Amount,
 				Expiry:      pd.Timeout,
 				PaymentHash: pd.RHash,
+				Crafted:     pd.Crafted,
+				Timeout:     pd.SpiderTimeout,
+
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
@@ -4512,6 +4526,8 @@ func (lc *LightningChannel) AddHTLC(htlc *lnwire.UpdateAddHTLC,
 		HtlcIndex:      lc.localUpdateLog.htlcCounter,
 		OnionBlob:      htlc.OnionBlob[:],
 		OpenCircuitKey: openKey,
+		SpiderTimeout:  htlc.Timeout,
+		Crafted:        htlc.Crafted,
 	}
 
 	// Make sure adding this HTLC won't violate any of the constraints we
@@ -4549,6 +4565,8 @@ func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64, err
 		LogIndex:  lc.remoteUpdateLog.logIndex,
 		HtlcIndex: lc.remoteUpdateLog.htlcCounter,
 		OnionBlob: htlc.OnionBlob[:],
+		SpiderTimeout:  htlc.Timeout,
+		Crafted:        htlc.Crafted,
 	}
 
 	lc.remoteUpdateLog.appendHtlc(pd)
