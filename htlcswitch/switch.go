@@ -891,6 +891,7 @@ func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
 		}
 
 		// check timeout
+		if TIMEOUT {
 		now := time.Now()
 		deadline := htlc.Crafted.Add(htlc.Timeout)
 		if deadline.Before(now) {
@@ -907,6 +908,7 @@ func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
 				FailureMessage: htlcErr,
 			}
 
+		}
 		}
 
 		debug_print("before link.HandleSwitchPacket\n")
@@ -1249,6 +1251,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 			return s.failAddPacket(packet, linkErr, addErr)
 		}
 
+		if TIMEOUT {
 		now := time.Now()
 		deadline := htlc.Crafted.Add(htlc.Timeout)
 		if deadline.Before(now) {
@@ -1267,6 +1270,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 			addErr := fmt.Errorf("HTLC already timed out, crafted=%v, deadline=%v, now=%v", htlc.Crafted, deadline, now)
 
 			return s.failAddPacket(packet, failure, addErr)
+		}
 		}
 
 		// Send the packet to the destination channel link which

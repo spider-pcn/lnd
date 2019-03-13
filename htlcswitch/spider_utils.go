@@ -9,6 +9,7 @@ import (
 // FIXME: temporary until we can use the global flags
 var SPIDER_FLAG bool = os.Getenv("SPIDER_QUEUE") == "1"
 var LP_ROUTING bool = os.Getenv("SPIDER_LP_ROUTING") == "1"
+var TIMEOUT bool = os.Getenv("SPIDER_TIMEOUT") == "1"
 
 var DEBUG_FLAG bool = false
 var LOG_FIREBASE bool = os.Getenv("SPIDER_LOG_FIREBASE") == "1"
