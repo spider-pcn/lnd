@@ -890,6 +890,25 @@ func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
 			}
 		}
 
+		// check timeout
+		now := time.Now()
+		deadline := htlc.Crafted.Add(htlc.Timeout)
+		if deadline.Before(now) {
+			// timeout the transaction
+			err := fmt.Errorf("HTLC already timed out, crafted=%v, deadline=%v, now=%v", htlc.Crafted, deadline, now)
+
+			// The update does not need to be populated as the error
+			// will be returned back to the router.
+			debug_print("failure zyx")
+			htlcErr := lnwire.NewTemporaryChannelFailure(nil)
+			return &ForwardingError{
+				ErrorSource:    s.cfg.SelfKey,
+				ExtraMsg:       err.Error(),
+				FailureMessage: htlcErr,
+			}
+
+		}
+
 		debug_print("before link.HandleSwitchPacket\n")
 		return link.HandleSwitchPacket(pkt)
 	}
