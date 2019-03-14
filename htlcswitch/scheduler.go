@@ -1,15 +1,15 @@
 package htlcswitch
 
 import (
-	//"time"
+	"time"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
 // This is the node class for the priority queue
 // Note that the underlying data structure used is a min heap
 type node struct {
-	//priority time.Time
-    priority lnwire.MilliSatoshi
+	priority time.Time
+  //priority lnwire.MilliSatoshi
 	packet   *htlcPacket
 }
 
@@ -18,11 +18,23 @@ type node struct {
 // like.
 func makeNode(pkt *htlcPacket) node {
 	//p := time.Now()
+	if htlc, ok := pkt.htlc.(*lnwire.UpdateAddHTLC); ok {
+		deadline := htlc.Crafted.Add(htlc.Timeout)
+		return node{
+			priority: deadline,
+			packet:   pkt,
+		}
+	}
 
-	return node{
-		priority: pkt.amount,
+	return node {
+		priority: time.Now(),
 		packet:   pkt,
 	}
+
+	//return node{
+		//priority: pkt.amount,
+		//packet:   pkt,
+	//}
 }
 
 // priorityQueue type implements the heap.Interface
@@ -30,10 +42,9 @@ func makeNode(pkt *htlcPacket) node {
 type priorityQueue []node
 
 // sort.Interface Less function
-// The packet which arrived before has a higher priority
 func (p priorityQueue) Less(i, j int) bool {
-	//return p[i].priority.Before(p[j].priority)
-    return p[i].priority < p[j].priority
+	return p[i].priority.After(p[j].priority)
+    //return p[i].priority < p[j].priority
 }
 
 // sort.Interface Len function

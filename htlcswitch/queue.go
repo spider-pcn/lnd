@@ -228,6 +228,13 @@ func (p *packetQueue) SignalFreeSlot() {
 	}
 }
 
+func (p *packetQueue) ClosestDeadline() time.Time {
+		defer p.queueCond.L.Unlock()
+		p.queueCond.L.Lock()
+		priority := p.queue[0].priority
+		return priority
+}
+
 // Length returns the number of pending htlc packets present within the over
 // flow queue.
 func (p *packetQueue) Length() int32 {
