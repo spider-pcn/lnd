@@ -544,6 +544,7 @@ func (l *channelLink) startQueueWatcher() {
 		minOverflowAmt := l.overflowQueue.MinHtlcAmount()
 		if (TIMEOUT) {
 			for {
+				fmt.Println("overflowQueue time out loop")
 				if (l.overflowQueue.Length() == 0) {
 					break
 				}
