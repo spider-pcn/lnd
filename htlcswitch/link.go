@@ -544,11 +544,11 @@ func (l *channelLink) startQueueWatcher() {
 		minOverflowAmt := l.overflowQueue.MinHtlcAmount()
 		if (TIMEOUT) {
 			for {
-				closestDeadline := l.overflowQueue.ClosestDeadline()
-				now := time.Now()
 				if (l.overflowQueue.Length() == 0) {
 					break
 				}
+				closestDeadline := l.overflowQueue.ClosestDeadline()
+				now := time.Now()
 				if closestDeadline.Before(now) {
 					// we should fail this, so signal free slot -> which will put it back
 					// to be processed in the switch
