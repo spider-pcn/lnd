@@ -536,6 +536,8 @@ func (l *channelLink) startQueueWatcher() {
 		// update sleep duration
 		TMP, _ := strconv.Atoi(SPIDER_QUEUE_UPDATE_TIME)
 		SLEEP_DURATION = TMP
+		fmt.Println("updated sleep duration")
+		fmt.Println(SLEEP_DURATION)
 	}
 	for {
 		channelAmt := l.channel.AvailableBalance()
@@ -547,11 +549,14 @@ func (l *channelLink) startQueueWatcher() {
 		// performed again, and if anything fails, the HTLC will be added back to
 		// the queue.
 		if (channelAmt > minOverflowAmt && minOverflowAmt != 0) {
-						debug_print(fmt.Sprintf("in startQueueWatcher, chanID: %s, channelAmt: %d, minOverflowAmt: %d\n", l.channel.ShortChanID(), channelAmt, minOverflowAmt));
+				fmt.Println(fmt.Sprintf("in startQueueWatcher, chanID: %s, channelAmt: %d, minOverflowAmt: %d\n", l.channel.ShortChanID(), channelAmt, minOverflowAmt));
+				debug_print(fmt.Sprintf("in startQueueWatcher, chanID: %s, channelAmt: %d, minOverflowAmt: %d\n", l.channel.ShortChanID(), channelAmt, minOverflowAmt));
 			// if no items in the queue, will not have any effect.
 			debug_print(fmt.Sprintf("signaling to the overflow queue, for channel\n: %s\n", l.shortChanID))
 			debug_print(fmt.Sprintf("current queue len at this node is: %d\n", l.overflowQueue.queueLen))
 			l.overflowQueue.SignalFreeSlot()
+		} else {
+			fmt.Println("nothing dequeued!!")
 		}
 		time.Sleep(time.Duration(SLEEP_DURATION)*time.Millisecond)
 	}
