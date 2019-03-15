@@ -161,6 +161,7 @@ func (p *packetQueue) packetCoordinator() {
 				// update the minHtlcAmt. Lock the queue first, as minHtlcAmt is also
 				// updated when a new packet is added to the queue.
 				p.queueCond.L.Lock()
+
 				for i := 0; i < int(p.Length()); i++ {
 					curPkt := p.queue[i].packet
 					if (int64(curPkt.amount) < p.minHtlcAmt) {
@@ -170,6 +171,7 @@ func (p *packetQueue) packetCoordinator() {
 				p.queueCond.L.Unlock()
 
 			case <-p.quit:
+				fmt.Println("p.quit instead of outgoing pkts!")
 				return
 			}
 
@@ -218,7 +220,7 @@ func (p *packetQueue) SignalFreeSlot() {
 	// We'll only send over a free slot signal if the queue *is not* empty.
 	// Otherwise, it's possible that we attempt to overfill the free slots
 	// semaphore and block indefinitely below.
-	debug_print(fmt.Sprintf("queue len is %d\n", p.queueLen))
+	//debug_print(fmt.Sprintf("queue len is %d\n", p.queueLen))
 	fmt.Println(fmt.Sprintf("signalFreeSlot queue len is %d", p.queueLen))
 	if atomic.LoadInt32(&p.queueLen) == 0 {
 		return
@@ -227,7 +229,8 @@ func (p *packetQueue) SignalFreeSlot() {
 	select {
 	case p.freeSlots <- struct{}{}:
 	case <-p.quit:
-		debug_print("they made us quit instead of signal free slot")
+		fmt.Println("q.quit!")
+		debug_print("they made us quit instead of signal free slot\n")
 		return
 	}
 }

@@ -841,6 +841,7 @@ func (s *Switch) routeAsync(packet *htlcPacket, errChan chan error,
 //   Alice         Bob         Carol
 //
 func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
+	fmt.Println("handleLocalDispatch!")
 	// User have created the htlc update therefore we should find the
 	// appropriate channel link and send the payment over this link.
 	if htlc, ok := pkt.htlc.(*lnwire.UpdateAddHTLC); ok {
@@ -1114,6 +1115,7 @@ func (s *Switch) parseFailedPayment(payment *pendingPayment, pkt *htlcPacket,
 // from one channel link to another and be able to propagate the settle/fail
 // updates back. This behaviour is achieved by creation of payment circuits.
 func (s *Switch) handlePacketForward(packet *htlcPacket) error {
+	fmt.Println("handlePakcetForward!")
 	switch htlc := packet.htlc.(type) {
 
 	// Channel link forwarded us a new htlc, therefore we initiate the

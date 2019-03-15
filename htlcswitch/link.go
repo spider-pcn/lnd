@@ -555,7 +555,7 @@ func (l *channelLink) startQueueWatcher() {
 					// we should fail this, so signal free slot -> which will put it back
 					// to be processed in the switch
 					fmt.Println("going to signal free slot because deadline exceeded")
-					fmt.Printf("%v",  closestDeadline)
+					//fmt.Printf("%v",  closestDeadline)
 					l.overflowQueue.SignalFreeSlot()
 				} else {
 					break
@@ -1344,10 +1344,12 @@ func (l *channelLink) randomFeeUpdateTimeout() time.Duration {
 // TODO(roasbeef): add sync ntfn to ensure switch always has consistent view?
 func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 	debug_print(fmt.Sprintf("handleDownstreamPkt\n"))
+	fmt.Println("handleDownstreamPkt")
 	var isSettle bool
 	switch htlc := pkt.htlc.(type) {
 	case *lnwire.UpdateAddHTLC:
 		debug_print(fmt.Sprintf("lnwire updateAddHTLC\n"))
+		fmt.Println("lnwire updateAddHTLC")
 		// If hodl.AddOutgoing mode is active, we exit early to simulate
 		// arbitrary delays between the switch adding an ADD to the
 		// mailbox, and the HTLC being added to the commitment state.
@@ -1356,6 +1358,81 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			l.mailBox.AckPacket(pkt.inKey())
 			return
 		}
+
+		if TIMEOUT {
+			// FIXME: decompose this stuff
+			now := time.Now()
+			deadline := htlc.Crafted.Add(htlc.Timeout)
+			if deadline.Before(now) {
+				// send failure message back. Other details don't matter anymore.
+				var (
+					localFailure = false
+					reason       lnwire.OpaqueReason
+				)
+
+				var failure lnwire.FailureMessage
+				update, err := l.cfg.FetchLastChannelUpdate(
+					l.ShortChanID(),
+				)
+				if err != nil {
+					failure = &lnwire.FailTemporaryNodeFailure{}
+				} else {
+					debug_print("failure 4")
+					failure = lnwire.NewTemporaryChannelFailure(
+						update,
+					)
+				}
+
+				// Encrypt the error back to the source unless
+				// the payment was generated locally.
+				if pkt.obfuscator == nil {
+					var b bytes.Buffer
+					err := lnwire.EncodeFailure(&b, failure, 0)
+					if err != nil {
+						l.errorf("unable to encode failure: %v", err)
+						l.mailBox.AckPacket(pkt.inKey())
+						return
+					}
+					reason = lnwire.OpaqueReason(b.Bytes())
+					localFailure = true
+				} else {
+					var err error
+					reason, err = pkt.obfuscator.EncryptFirstHop(failure)
+					if err != nil {
+						l.errorf("unable to obfuscate error: %v", err)
+						l.mailBox.AckPacket(pkt.inKey())
+						return
+					}
+				}
+
+				failPkt := &htlcPacket{
+					incomingChanID: pkt.incomingChanID,
+					incomingHTLCID: pkt.incomingHTLCID,
+					circuit:        pkt.circuit,
+					sourceRef:      pkt.sourceRef,
+					hasSource:      true,
+					localFailure:   localFailure,
+					htlc: &lnwire.UpdateFailHTLC{
+						Reason: reason,
+					},
+				}
+
+				go l.forwardBatch(failPkt)
+
+				// Remove this packet from the link's mailbox,
+				// this prevents it from being reprocessed if
+				// the link restarts and resets it mailbox. If
+				// this response doesn't make it back to the
+				// originating link, it will be rejected upon
+				// attempting to reforward the Add to the
+				// switch, since the circuit was never fully
+				// opened, and the forwarding package shows it
+				// as unacknowledged.
+				l.mailBox.AckPacket(pkt.inKey())
+
+			}
+		}
+
 
 		// A new payment has been initiated via the downstream channel,
 		// so we add the new HTLC to our local log, then update the
