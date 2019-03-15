@@ -145,18 +145,18 @@ func (p *packetQueue) packetCoordinator() {
 			// inserted item might have a higher priority than p.queue[0]
 			p.queueCond.L.Lock()
 			nextPkt := p.queue[0].packet
+			atomic.AddInt32(&p.queueLen, -1)
+			atomic.AddInt64(&p.totalHtlcAmt, int64(-nextPkt.amount))
 			heap.Pop(&p.queue)
 			p.queueCond.L.Unlock()
 
 			select {
 			case p.outgoingPkts <- nextPkt:
-				debug_print("going to dequeue next packet\n")
+				//debug_print("going to dequeue next packet\n")
 				// Only decrease the queueLen and totalHtlcAmt once the packet has been
 				// sent out
 				// FIXME: do we need these to be atomic? Since the queue is per channel
 				// link, I think only one thread can be updating this at a time?
-				atomic.AddInt32(&p.queueLen, -1)
-				atomic.AddInt64(&p.totalHtlcAmt, int64(-nextPkt.amount))
 				// update the minHtlcAmt. Lock the queue first, as minHtlcAmt is also
 				// updated when a new packet is added to the queue.
 				p.queueCond.L.Lock()
