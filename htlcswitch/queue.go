@@ -229,7 +229,7 @@ func (p *packetQueue) SignalFreeSlot() {
 	select {
 	case p.freeSlots <- struct{}{}:
 	case <-p.quit:
-		fmt.Println("q.quit!")
+		fmt.Println("q.quit in SignalFreeSlot!")
 		debug_print("they made us quit instead of signal free slot\n")
 		return
 	}
