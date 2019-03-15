@@ -138,6 +138,7 @@ func (p *packetQueue) packetCoordinator() {
 		select {
 		case <-p.freeSlots:
 			debug_print("free slots indicated")
+			fmt.Println("free slots indicated!")
 			// Pop item with highest priority from the front of the queue. This will
 			// set us up for the next iteration. If the queue is empty at this point,
 			// then we'll block at the top.

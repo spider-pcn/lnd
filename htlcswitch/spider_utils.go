@@ -11,7 +11,7 @@ var SPIDER_FLAG bool = os.Getenv("SPIDER_QUEUE") == "1"
 var LP_ROUTING bool = os.Getenv("SPIDER_LP_ROUTING") == "1"
 var TIMEOUT bool = os.Getenv("SPIDER_TIMEOUT") == "1"
 
-var DEBUG_FLAG bool = false
+var DEBUG_FLAG bool = true
 var LOG_FIREBASE bool = os.Getenv("SPIDER_LOG_FIREBASE") == "1"
 //var FIREBASE_URL string = "https://spider2.firebaseio.com/"
 var FIREBASE_URL string = "https://spider3-b4420.firebaseio.com/"

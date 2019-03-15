@@ -1257,6 +1257,7 @@ out:
 		// to continue propagating within the network.
 		case packet := <-l.overflowQueue.outgoingPkts:
 			debug_print(fmt.Sprintf("pkt <- overflowQueue.outgoingPkts\n"))
+			fmt.Println(fmt.Sprintf("pkt <- overflowQueue.outgoingPkts"))
 			msg := packet.htlc.(*lnwire.UpdateAddHTLC)
 			log.Tracef("Reprocessing downstream add update "+
 				"with payment hash(%x)", msg.PaymentHash[:])
