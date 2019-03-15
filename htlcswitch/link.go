@@ -1440,6 +1440,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 				// opened, and the forwarding package shows it
 				// as unacknowledged.
 				l.mailBox.AckPacket(pkt.inKey())
+				return
 			}
 		}
 
