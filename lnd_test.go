@@ -3970,16 +3970,16 @@ func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32
 			if start == lastNodeName {
 				lastNodeName = end
 				if hopIdx == 0 {
-					fmt.Printf("%v->%v", start, end)
+					//fmt.Printf("%v->%v", start, end)
 				} else {
-					fmt.Printf("->%v", end)
+					//fmt.Printf("->%v", end)
 				}
 			} else {
 				lastNodeName = start
 				if hopIdx == 0 {
-					fmt.Printf("%v->%v", end, start)
+					//fmt.Printf("%v->%v", end, start)
 				} else {
-					fmt.Printf("->%v", start)
+					//fmt.Printf("->%v", start)
 				}
 			}
 		}
@@ -4063,9 +4063,9 @@ func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32
 							if err == nil && payresp.PaymentError == "" {
 								atomic.AddUint64(&atomicSucceeded[i], 1)
 								mux.Lock()
-								fmt.Printf("%v->%v: ", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+								//fmt.Printf("%v->%v: ", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
 								printRoute(payIntents[i][0], payresp.PaymentRoute.Hops)
-								fmt.Printf("\n")
+								//fmt.Printf("\n")
 								mux.Unlock()
 								sendok <- 0 // success
 							} else if err != nil {
@@ -4085,11 +4085,11 @@ func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32
 							switch s {
 							case 1:
 								mux.Lock()
-								fmt.Printf("%v->%v: api failed\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+								//fmt.Printf("%v->%v: api failed\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
 								mux.Unlock()
 							case 2:
 								mux.Lock()
-								fmt.Printf("%v->%v: failed\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+								//fmt.Printf("%v->%v: failed\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
 								mux.Unlock()
 							case 4:
 								mux.Lock()
@@ -4098,7 +4098,7 @@ func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32
 							}
 						case <-timeout:
 							mux.Lock()
-							fmt.Printf("%v->%v: timeout\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
+							//fmt.Printf("%v->%v: timeout\n", nodeNames[payIntents[i][0]], nodeNames[payIntents[i][1]])
 							mux.Unlock()
 						}
 					}
@@ -12535,12 +12535,12 @@ type testCase struct {
 
 var testsCases = []*testCase{
 	{
-		name: "test spider LP routing",
-		test: testSpiderLP,
-	},
-	{
 		name: "test spider shortest path routing",
 		test: testSpiderShortestPath,
+	},
+	{
+		name: "test spider LP routing",
+		test: testSpiderLP,
 	},
 	{
 		name: "test spider WF routing",

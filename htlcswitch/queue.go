@@ -182,6 +182,7 @@ func (p *packetQueue) packetCoordinator() {
 // AddPkt adds the referenced packet to the overflow queue, preserving ordering
 // of the existing items.
 func (p *packetQueue) AddPkt(pkt *htlcPacket) {
+	fmt.Println("add pkt to the queue!!")
 	// First, we'll lock the condition, and add the message to the end of
 	// the message queue, and increment the internal atomic for tracking
 	// the queue's length.
@@ -216,6 +217,7 @@ func (p *packetQueue) SignalFreeSlot() {
 	// Otherwise, it's possible that we attempt to overfill the free slots
 	// semaphore and block indefinitely below.
 	debug_print(fmt.Sprintf("queue len is %d\n", p.queueLen))
+	fmt.Println(fmt.Sprintf("queue len is %d", p.queueLen))
 	if atomic.LoadInt32(&p.queueLen) == 0 {
 		return
 	}
@@ -237,6 +239,7 @@ func (p *packetQueue) ClosestDeadline() time.Time {
 		}
 		fmt.Println("queuelen: ")
 		fmt.Println(p.queueLen)
+		fmt.Println(len(p.queue))
 		priority := p.queue[0].priority
 		return priority
 }
