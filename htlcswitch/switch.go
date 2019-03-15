@@ -895,6 +895,7 @@ func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
 		now := time.Now()
 		deadline := htlc.Crafted.Add(htlc.Timeout)
 		if deadline.Before(now) {
+			fmt.Println("failure timeout 1")
 			// timeout the transaction
 			err := fmt.Errorf("HTLC already timed out, crafted=%v, deadline=%v, now=%v", htlc.Crafted, deadline, now)
 
@@ -907,7 +908,6 @@ func (s *Switch) handleLocalDispatch(pkt *htlcPacket) error {
 				ExtraMsg:       err.Error(),
 				FailureMessage: htlcErr,
 			}
-
 		}
 		}
 
@@ -1255,6 +1255,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 		now := time.Now()
 		deadline := htlc.Crafted.Add(htlc.Timeout)
 		if deadline.Before(now) {
+			fmt.Println("timeout error 2")
 			// timeout the transaction
 			var failure lnwire.FailureMessage
 			update, err := s.cfg.FetchLastChannelUpdate(
