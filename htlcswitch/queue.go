@@ -150,6 +150,7 @@ func (p *packetQueue) packetCoordinator() {
 
 			select {
 			case p.outgoingPkts <- nextPkt:
+				debug_print("going to dequeue next packet\n")
 				// Only decrease the queueLen and totalHtlcAmt once the packet has been
 				// sent out
 				// FIXME: do we need these to be atomic? Since the queue is per channel
@@ -182,7 +183,7 @@ func (p *packetQueue) packetCoordinator() {
 // AddPkt adds the referenced packet to the overflow queue, preserving ordering
 // of the existing items.
 func (p *packetQueue) AddPkt(pkt *htlcPacket) {
-	fmt.Println("add pkt to the queue!!")
+	debug_print("add pkt to the queue!!")
 	// First, we'll lock the condition, and add the message to the end of
 	// the message queue, and increment the internal atomic for tracking
 	// the queue's length.
@@ -217,7 +218,7 @@ func (p *packetQueue) SignalFreeSlot() {
 	// Otherwise, it's possible that we attempt to overfill the free slots
 	// semaphore and block indefinitely below.
 	debug_print(fmt.Sprintf("queue len is %d\n", p.queueLen))
-	fmt.Println(fmt.Sprintf("queue len is %d", p.queueLen))
+	fmt.Println(fmt.Sprintf("signalFreeSlot queue len is %d", p.queueLen))
 	if atomic.LoadInt32(&p.queueLen) == 0 {
 		return
 	}
@@ -233,7 +234,6 @@ func (p *packetQueue) SignalFreeSlot() {
 func (p *packetQueue) ClosestDeadline() time.Time {
 		defer p.queueCond.L.Unlock()
 		p.queueCond.L.Lock()
-
 		if atomic.LoadInt32(&p.queueLen) == 0 {
 			return time.Now()
 		}
