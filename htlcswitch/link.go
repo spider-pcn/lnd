@@ -546,6 +546,7 @@ func (l *channelLink) startQueueWatcher() {
 			for {
 				fmt.Println("overflowQueue time out loop")
 				if (l.overflowQueue.Length() == 0) {
+					fmt.Println("breaking out of loop because len 0")
 					break
 				}
 				closestDeadline := l.overflowQueue.ClosestDeadline()
