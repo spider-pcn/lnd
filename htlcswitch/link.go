@@ -543,22 +543,6 @@ func (l *channelLink) startQueueWatcher() {
 		channelAmt := l.channel.AvailableBalance()
 		minOverflowAmt := l.overflowQueue.MinHtlcAmount()
 		if (TIMEOUT) {
-				now := time.Now()
-				closestDeadline := l.overflowQueue.ClosestDeadline()
-				if closestDeadline.Before(now) {
-					// we should fail this, so signal free slot -> which will put it back
-					// to be processed in the switch
-					fmt.Println("going to signal free slot because deadline exceeded")
-					//fmt.Printf("%v",  closestDeadline)
-					l.overflowQueue.SignalFreeSlot()
-				}
-
-			//for {
-				//fmt.Println("overflowQueue time out loop")
-				//if (l.overflowQueue.Length() == 0) {
-					//fmt.Println("breaking out of loop because len 0")
-					//break
-				//}
 				//now := time.Now()
 				//closestDeadline := l.overflowQueue.ClosestDeadline()
 				//if closestDeadline.Before(now) {
@@ -567,10 +551,26 @@ func (l *channelLink) startQueueWatcher() {
 					//fmt.Println("going to signal free slot because deadline exceeded")
 					////fmt.Printf("%v",  closestDeadline)
 					//l.overflowQueue.SignalFreeSlot()
-				//} else {
-					//break
 				//}
-			//}
+
+			for {
+				fmt.Println("overflowQueue time out loop")
+				if (l.overflowQueue.Length() == 0) {
+					fmt.Println("breaking out of loop because len 0")
+					break
+				}
+				now := time.Now()
+				closestDeadline := l.overflowQueue.ClosestDeadline()
+				if closestDeadline.Before(now) {
+					// we should fail this, so signal free slot -> which will put it back
+					// to be processed in the switch
+					fmt.Println("going to signal free slot because deadline exceeded")
+					//fmt.Printf("%v",  closestDeadline)
+					l.overflowQueue.SignalFreeSlot()
+				} else {
+					break
+				}
+			}
 		}
 		// CHECK: is it enough to check that number of inflight htlc's are below
 		// threshold to signal to overflow queue? Should be the correct behaviour
