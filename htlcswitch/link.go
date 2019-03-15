@@ -1364,6 +1364,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			now := time.Now()
 			deadline := htlc.Crafted.Add(htlc.Timeout)
 			if deadline.Before(now) {
+				fmt.Println("going to send back failure message")
 				// send failure message back. Other details don't matter anymore.
 				var (
 					localFailure = false
@@ -1429,7 +1430,6 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 				// opened, and the forwarding package shows it
 				// as unacknowledged.
 				l.mailBox.AckPacket(pkt.inKey())
-
 			}
 		}
 
