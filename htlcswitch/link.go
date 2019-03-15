@@ -549,8 +549,8 @@ func (l *channelLink) startQueueWatcher() {
 					fmt.Println("breaking out of loop because len 0")
 					break
 				}
-				closestDeadline := l.overflowQueue.ClosestDeadline()
 				now := time.Now()
+				closestDeadline := l.overflowQueue.ClosestDeadline()
 				if closestDeadline.Before(now) {
 					// we should fail this, so signal free slot -> which will put it back
 					// to be processed in the switch
