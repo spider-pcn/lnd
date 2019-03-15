@@ -235,6 +235,8 @@ func (p *packetQueue) ClosestDeadline() time.Time {
 		if atomic.LoadInt32(&p.queueLen) == 0 {
 			return time.Now()
 		}
+		fmt.Println("queuelen: ")
+		fmt.Println(p.queueLen)
 		priority := p.queue[0].priority
 		return priority
 }
