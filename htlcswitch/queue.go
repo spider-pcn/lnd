@@ -234,7 +234,7 @@ func (p *packetQueue) SignalFreeSlot() {
 func (p *packetQueue) ClosestDeadline() time.Time {
 		defer p.queueCond.L.Unlock()
 		p.queueCond.L.Lock()
-		if len(p.queue) == 0 {
+		if atomic.LoadInt32(&p.queueLen) == 0 {
 			return time.Now()
 		}
 		priority := p.queue[0].priority
