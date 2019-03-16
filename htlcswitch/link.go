@@ -1962,15 +1962,17 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			}
 			aDiff, sDiff := l.getArrivalServiceTimes()
 			// TODO: should we be calculating mu_remote as well here?
-			wx := float32(aDiff / time.Second) / float32(sDiff / time.Second)
+			//wx := float32(aDiff / time.Second) / float32(sDiff / time.Second)
+			wx := float32(sDiff / time.Second) / float32(aDiff / time.Second)
 			wy := float32(msg.Sdiff_Remote / time.Second) / float32(msg.Adiff_Remote / time.Second)
 			iy := float32(msg.I_Remote)
 			ix := float32(l.i_local)
 			qx := float32(l.overflowQueue.Length())
 			qy := float32(msg.Q_Remote)
 			log.Infof("ix: %d, iy: %d\n wx: %d, wy: %d\n, qx: %d, qy: %d\n", ix, iy, wx, wy, qx, qy)
+			debug_print(fmt.Sprintf("aDiff: %v, sDiff: %v, aDiffRemote: %v, aDiffRemote: %v\n", aDiff, sDiff, msg.Adiff_Remote, msg.Sdiff_Remote))
 			debug_print(fmt.Sprintf("ix: %d, iy: %d\n wx: %d, wy: %d\n, qx: %d, qy: %d\n", ix, iy, wx, wy, qx, qy))
-			debug_print(fmt.Sprintf("originals: ix: %d, iy: %d", l.i_local, msg.I_Remote))
+			debug_print(fmt.Sprintf("originals: ix: %d, iy: %d\n", l.i_local, msg.I_Remote))
 
 			// min(qx, qy)
 			minq := qx
