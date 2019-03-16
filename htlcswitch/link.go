@@ -476,6 +476,9 @@ func (l *channelLink) periodicUpdatePriceProbe()  {
 			continue
 		}
 
+		debug_print(fmt.Sprintf("periodicUpdate: x: %d, i: %d, q: %d, n: %d", l.x_local,
+								l.i_local, queue_len, l.n_local))
+
 		aVal, sVal := l.getArrivalServiceTimes()
 		msg := &lnwire.UpdatePriceProbe {
 			ChanID: l.ChanID(),
@@ -1967,6 +1970,8 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			qy := float32(msg.Q_Remote)
 			log.Infof("ix: %d, iy: %d\n wx: %d, wy: %d\n, qx: %d, qy: %d\n", ix, iy, wx, wy, qx, qy)
 			debug_print(fmt.Sprintf("ix: %d, iy: %d\n wx: %d, wy: %d\n, qx: %d, qy: %d\n", ix, iy, wx, wy, qx, qy))
+			debug_print(fmt.Sprintf("originals: ix: %d, iy: %d", l.i_local, msg.I_Remote))
+
 			// min(qx, qy)
 			minq := qx
 			if qy < minq {
