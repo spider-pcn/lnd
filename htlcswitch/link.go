@@ -417,7 +417,6 @@ func (l *channelLink) updateAggregateStatsFirebase() {
 
 func (l *channelLink) periodicUpdatePriceProbe()  {
 	//time.Sleep(time.Duration(10) * time.Second)
-	debug_print("going to start periodicUpdatePriceProbe after waiting 10 seconds\n")
 	for {
 		// FIXME: maybe this should not be uint32?
 		log.Infof("LP: l.N value is %d\n", l.N)
@@ -530,6 +529,9 @@ func (l *channelLink) updateFirebase()  {
 // Queue is lower than the available balance, and then wake up the queue.
 func (l *channelLink) startQueueWatcher() {
 	// infinite loop.
+	if (TIMEOUT) {
+		debug_print("TIMEOUT\n")
+	}
 	SPIDER_QUEUE_UPDATE_TIME := os.Getenv("SPIDER_QUEUE_UPDATE_TIME")
 	SLEEP_DURATION := 100
 	if (SPIDER_QUEUE_UPDATE_TIME != "") {
@@ -539,7 +541,10 @@ func (l *channelLink) startQueueWatcher() {
 		fmt.Println("updated sleep duration")
 		fmt.Println(SLEEP_DURATION)
 	}
+	interval := 0
 	for {
+		fmt.Printf("queue watcher interval = %d\n", interval)
+		//debug_print(fmt.Sprintf("queue watcher interval = %d\n", interval))
 		channelAmt := l.channel.AvailableBalance()
 		minOverflowAmt := l.overflowQueue.MinHtlcAmount()
 		if (TIMEOUT) {
@@ -553,6 +558,7 @@ func (l *channelLink) startQueueWatcher() {
 					//l.overflowQueue.SignalFreeSlot()
 				//}
 
+			numTimedOut := 0
 			for {
 				fmt.Println("overflowQueue time out loop")
 				if (l.overflowQueue.Length() == 0) {
@@ -570,6 +576,14 @@ func (l *channelLink) startQueueWatcher() {
 				} else {
 					break
 				}
+				numTimedOut += 1
+			}
+			if (numTimedOut > 0) {
+				debug_print(fmt.Sprintf("interval: %d, num TIMEDOUT: %d\n", interval,
+									numTimedOut))
+			} else {
+				debug_print(fmt.Sprintf("interval: %d, num timed out: %d\n", interval,
+									numTimedOut))
 			}
 		}
 		// CHECK: is it enough to check that number of inflight htlc's are below
@@ -588,6 +602,7 @@ func (l *channelLink) startQueueWatcher() {
 			// fmt.Println("nothing dequeued!!")
 		}
 		time.Sleep(time.Duration(SLEEP_DURATION)*time.Millisecond)
+		interval += 1
 	}
 }
 
@@ -606,7 +621,10 @@ func (l *channelLink) Start() error {
 		return err
 	}
 
+	fmt.Println("starting channel link!")
+	debug_print("starting channel link!")
 	if (SPIDER_FLAG) {
+		debug_print("SPIDER FLAG")
 		go l.startQueueWatcher()
 	}
 
@@ -1375,6 +1393,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			deadline := htlc.Crafted.Add(htlc.Timeout)
 			if deadline.Before(now) {
 				fmt.Println("going to send back failure message")
+				debug_print("going to send back failure message\n")
 				// send failure message back. Other details don't matter anymore.
 				var (
 					localFailure = false
@@ -1441,6 +1460,8 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 				// as unacknowledged.
 				l.mailBox.AckPacket(pkt.inKey())
 				return
+			} else {
+				debug_print("timeout was NOT exceeded\n")
 			}
 		}
 

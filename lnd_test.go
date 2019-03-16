@@ -3691,6 +3691,11 @@ func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32
 	numNodes := 5                                  // number of nodes in the network
 	nodes := make([]*lntest.HarnessNode, numNodes) // create a list for nodes
 	nodeNames := []string{"1", "2", "3", "4", "5"} // name of the nodes
+
+	//numNodes := 5                                  // number of nodes in the network
+	//nodes := make([]*lntest.HarnessNode, numNodes) // create a list for nodes
+	//nodeNames := []string{"1", "2", "3", "4", "5"} // name of the nodes
+
 	//nodeDelays := []int{100, 200, 50, 50, 50}
 	nodeDelays := []int{0, 0, 0, 0, 0}
 
