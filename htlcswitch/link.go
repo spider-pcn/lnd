@@ -260,9 +260,23 @@ type channelLink struct {
 	mu_local float32
 	mu_remote float32
 	lambda float32
+
 	// FIXME: should these be in terms of millisatoshis?
 	N uint64		// value of transactions since the last UpdatePriceProbe
 	capacity uint64
+	i_local uint64
+	n_local uint64
+	//n_remote uint64
+	//q_remote uint64
+	//w_local uint64
+	//w_remote uint64
+	//arrival_times []uint64
+	//service_times []uint64
+	arrival_times []time.Time
+	service_times []time.Time
+
+	// maps each htlc to its arrival time, so we can calculate the service time
+	//arrival_map  map[uint64] time.Time
 
 	// The following fields are only meant to be used *atomically*
 	started  int32
@@ -415,15 +429,62 @@ func (l *channelLink) updateAggregateStatsFirebase() {
 	}
 }
 
+func (l *channelLink) getArrivalServiceTimes() (time.Duration, time.Duration) {
+	var aVal time.Duration
+	if len(l.arrival_times) > SERVICE_ARRIVAL_WINDOW {
+		lastVal := l.arrival_times[len(l.arrival_times)-1]
+		firstVal := l.arrival_times[len(l.arrival_times)-SERVICE_ARRIVAL_WINDOW-1]
+		//aVal = uint64(lastVal - firstVal)
+		aVal = lastVal.Sub(firstVal)
+	} else {
+		lastVal := l.arrival_times[len(l.arrival_times)-1]
+		firstVal := l.arrival_times[0]
+		//aVal = uint64(lastVal - firstVal)
+		aVal = lastVal.Sub(firstVal)
+	}
+
+	var sVal time.Duration
+	if len(l.service_times) > SERVICE_ARRIVAL_WINDOW {
+		lastVal := l.arrival_times[len(l.arrival_times)-1]
+		firstVal := l.arrival_times[len(l.arrival_times)-SERVICE_ARRIVAL_WINDOW-1]
+		//sVal = uint64(lastVal - firstVal)
+		sVal = lastVal.Sub(firstVal)
+	} else {
+		lastVal := l.arrival_times[len(l.arrival_times)-1]
+		firstVal := l.arrival_times[0]
+		//sVal = uint64(lastVal - firstVal)
+		sVal = lastVal.Sub(firstVal)
+	}
+	return aVal, sVal
+}
+
 func (l *channelLink) periodicUpdatePriceProbe()  {
 	//time.Sleep(time.Duration(10) * time.Second)
+	debug_print("periodicUpdatePriceProbe started!\n")
+	log.Infof("LP: periodicUpdatePriceProbe started")
+
 	for {
+		time.Sleep(time.Duration(T_UPDATE) * time.Second)
 		// FIXME: maybe this should not be uint32?
 		log.Infof("LP: l.N value is %d\n", l.N)
 		l.x_local = uint64(float64(l.N) / float64(T_UPDATE))
+		// FIXME: is this correct casting?
+		queue_len := uint64(l.overflowQueue.Length())
+		log.Infof("LP: queueLen: %d\n", queue_len)
+
+		if len(l.arrival_times) == 0 || len(l.service_times) == 0 {
+			continue
+		}
+
+		aVal, sVal := l.getArrivalServiceTimes()
 		msg := &lnwire.UpdatePriceProbe {
 			ChanID: l.ChanID(),
 			X_Remote : l.x_local,
+			I_Remote: l.i_local,
+			Q_Remote: queue_len,
+			N_Remote: l.n_local,
+			Adiff_Remote: aVal,
+			Sdiff_Remote: sVal,
 		}
 		log.Infof("LP: going to send update, with x = %d\n", l.x_local)
 
@@ -432,8 +493,8 @@ func (l *channelLink) periodicUpdatePriceProbe()  {
 			log.Infof("LP: err is: %v!\n", err)
 		}
 		l.N = 0.00
-		// send latest value of x_local to peer
-		time.Sleep(time.Duration(T_UPDATE) * time.Second)
+		// update all the local values to begin recording for the next interval
+		l.n_local = 0.00
 	}
 }
 
@@ -660,9 +721,17 @@ func (l *channelLink) Start() error {
 		l.N = 0
 		// FIXME: need to change this to real value
 		// l.capacity = 1.00
-		snapshot := l.channel.StateSnapshot()
-		l.capacity = uint64(snapshot.Capacity)
+		//snapshot := l.channel.StateSnapshot()
+		//l.capacity = uint64(snapshot.Capacity)
+		// pari: FIXME: snapshot.Capacity / transaction_size
+
+		l.capacity = 100
 		log.Infof("LP: capacity initialized to: %d\n", l.capacity)
+
+		l.i_local = 0
+		l.n_local = 0
+		//l.arrival_map = make(map[uint64] time.Time)
+		//l.q_remote = 0
 	}
 
 	log.Infof("ChannelLink(%v) is starting", l)
@@ -1284,6 +1353,7 @@ out:
 		// we'll attempt to re-process the packet in order to allow it
 		// to continue propagating within the network.
 		case packet := <-l.overflowQueue.outgoingPkts:
+			// PN: every transaction that was in the queue will be reprocessed here.
 			debug_print(fmt.Sprintf("pkt <- overflowQueue.outgoingPkts\n"))
 			fmt.Println(fmt.Sprintf("pkt <- overflowQueue.outgoingPkts"))
 			msg := packet.htlc.(*lnwire.UpdateAddHTLC)
@@ -1305,6 +1375,8 @@ out:
 		// that the link is an intermediate hop in a multi-hop HTLC
 		// circuit.
 		case pkt := <-l.downstream:
+			// PN: every packet that we are sending forward and is received for the
+			// first time will start from here.
 			debug_print(fmt.Sprintf("pkt <- l.downstream\n"))
 			debug_print(fmt.Sprintf("ID: %s\n", l.shortChanID))
 			// If we have non empty processing queue then we'll add
@@ -1312,6 +1384,11 @@ out:
 			// directly. Once an active HTLC is either settled or
 			// failed, then we'll free up a new slot.
 			htlc, ok := pkt.htlc.(*lnwire.UpdateAddHTLC)
+			if ok {
+				arrival_time := time.Now()
+				l.arrival_times = append(l.arrival_times, arrival_time)
+				//l.arrival_map[pkt.incomingHTLCID] = arrival_time
+			}
 			// spider: overflowQueue might have stuff that we did not have enough to
 			// pay for, but we may still be able to service this request.
 			if ok && l.overflowQueue.Length() != 0 && !SPIDER_FLAG {
@@ -1465,7 +1542,6 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			}
 		}
 
-
 		// A new payment has been initiated via the downstream channel,
 		// so we add the new HTLC to our local log, then update the
 		// commitment chains.
@@ -1617,6 +1693,11 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		l.keystoneBatch = append(l.keystoneBatch, pkt.keystone())
 
 		l.cfg.Peer.SendMessage(false, htlc)
+		// at this point we know that the packet is definitely inflight
+		// FIXME: does this need to be atomic?
+		l.i_local += 1
+		l.service_times = append(l.service_times, time.Now())
+		// add the service time for this
 
 	case *lnwire.UpdateFulfillHTLC:
 		// If hodl.SettleOutgoing mode is active, we exit early to
@@ -1675,6 +1756,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		// so we can continue the propagation of the settle message.
 		l.cfg.Peer.SendMessage(false, htlc)
 		isSettle = true
+		l.i_local -= 1
 
 	case *lnwire.UpdateFailHTLC:
 		// If hodl.FailOutgoing mode is active, we exit early to
@@ -1733,6 +1815,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		// initially created the HTLC.
 		l.cfg.Peer.SendMessage(false, htlc)
 		isSettle = true
+		// if a transaction we sent previously, failed somewhere, then we can also
+		// treat that as one fewer inflight transaction
+		l.i_local -= 1
 	}
 
 	l.batchCounter++
@@ -1854,34 +1939,42 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			"assigning index: %v\n", msg.PaymentHash[:], index))
 		// FIXME pari: is this the best place to update this?
 		if (LP_ROUTING) {
-			log.Infof("updating N, old value: %d\n", l.N)
-			l.N += uint64(msg.Amount)
-			log.Infof("new N value: %d\n", l.N)
+			//log.Infof("updating N, old value: %d\n", l.N)
+			//l.N += uint64(msg.Amount)
+			//log.Infof("new N value: %d\n", l.N)
+			l.n_local += 1
 		}
 	case *lnwire.UpdatePriceProbe:
 		if (LP_ROUTING) {
+			// probe sent by other side with their values. Will calculate / update
+			// local lambda / and mu values based on this.
 			log.Infof("got update price probe!!!!\n")
-			// based on the specifications, we need to do the following:
-			//Read the remote rate $x_remote$ from the message.
-			//Update $\lambda$, $mu_local$ and $mu_remote$ as follows:
-			//\lambda = max((\lambda + \eta (x_{local} + x_{remote} - (C / \delta))), 0)
-			//\mu_local = max((\mu_local + \kappa(x_{local} - x_{remote})), 0)
-			//\mu_remote = max((\mu_remote + \kappa(x_{remote} - x_{local})), 0)
-			x_remote := msg.X_Remote
-			log.Infof("LP: x remote: %d, x_local: %d\n", x_remote, l.x_local)
-			l.lambda = l.lambda + ETA * (float32(l.x_local + x_remote) - (float32(l.capacity) / DELTA))
-			if (l.lambda < 0.00) {
-				l.lambda = 0.00
+			n_remote := msg.N_Remote
+			q_remote := msg.Q_Remote
+
+			l.mu_local = l.mu_local + KAPPA * (float32(l.n_local) + (float32(l.overflowQueue.Length()) * T_UPDATE / QUEUE_DRAIN_TIME) - float32(n_remote) - (float32(q_remote) * T_UPDATE / QUEUE_DRAIN_TIME))
+
+			if len(l.arrival_times) == 0 || len(l.service_times) == 0 {
+				return
 			}
-			l.mu_local = l.mu_local + KAPPA * float32(l.x_local - x_remote)
-			if (l.mu_local < 0.00) {
-				l.mu_local = 0.00
+			aDiff, sDiff := l.getArrivalServiceTimes()
+			// TODO: should we be calculating mu_remote as well here?
+			wx := float32(aDiff / time.Second) / float32(sDiff / time.Second)
+			wy := float32(msg.Sdiff_Remote / time.Second) / float32(msg.Adiff_Remote / time.Second)
+			iy := float32(msg.I_Remote)
+			ix := float32(l.i_local)
+			qx := float32(l.overflowQueue.Length())
+			qy := float32(msg.Q_Remote)
+			log.Infof("ix: %d, iy: %d\n wx: %d, wy: %d\n, qx: %d, qy: %d\n", ix, iy, wx, wy, qx, qy)
+			debug_print(fmt.Sprintf("ix: %d, iy: %d\n wx: %d, wy: %d\n, qx: %d, qy: %d\n", ix, iy, wx, wy, qx, qy))
+			// min(qx, qy)
+			minq := qx
+			if qy < minq {
+				minq = qy
 			}
-			l.mu_remote = l.mu_remote + KAPPA * float32(x_remote - l.x_local)
-			if (l.mu_remote < 0.00) {
-				l.mu_remote = 0.00
-			}
-			log.Infof("LP: lambda: %d, mu_local: %d, mu_remote: %d\n", l.lambda, l.mu_local, l.mu_remote)
+			l.lambda = l.lambda + ETA*T_UPDATE * (ix*wx + iy*wy - float32(l.capacity) +(2.00*BETA*minq))
+			log.Infof("l.mu_local: %d, l.lambda: %d\n", l.mu_local, l.lambda)
+			debug_print(fmt.Sprintf("l.mu_local: %d, l.lambda: %d\n", l.mu_local, l.lambda))
 		}
 
 	case *lnwire.UpdateFulfillHTLC:

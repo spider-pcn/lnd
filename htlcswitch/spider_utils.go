@@ -19,8 +19,13 @@ var FIREBASE_URL string = "https://spider3-b4420.firebaseio.com/"
 // globals required for LP routing 
 var ETA float32 = 0.5
 var KAPPA float32 = 0.5
-var T_UPDATE float32 = 1.00		// in terms of seconds 
+var BETA float32 = 1.00
+// same as measurement_interval
+var T_UPDATE float32 = 1.5		// in terms of seconds 
+// FIXME: how to set this?
+var QUEUE_DRAIN_TIME float32 = 5.00
 var DELTA float32 = 1.00 // RTT of longest path, in seconds
+var SERVICE_ARRIVAL_WINDOW int = 300
 
 // multiply MAX_HTLC count by this to get max overflowQueue length
 var SPIDER_QUEUE_LENGTH_SCALE int = 8

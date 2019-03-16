@@ -45,7 +45,7 @@ type priorityQueue []node
 func (p priorityQueue) Less(i, j int) bool {
 	//return p[i].priority.After(p[j].priority)
 	return p[i].priority.Before(p[j].priority)
-    //return p[i].priority < p[j].priority
+	//return p[i].priority < p[j].priority
 }
 
 // sort.Interface Len function

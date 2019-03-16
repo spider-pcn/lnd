@@ -1,9 +1,15 @@
 package lnwire
 
 import "io"
+import "time"
 
 type UpdatePriceProbe struct {
 	X_Remote uint64
+	N_Remote uint64
+	Q_Remote uint64
+	I_Remote uint64		// Inflight_Remote
+	Adiff_Remote time.Duration
+	Sdiff_Remote time.Duration
 	ChanID ChannelID
 }
 
@@ -29,6 +35,11 @@ func (c *UpdatePriceProbe) Decode(r io.Reader, pver uint32) error {
 	return readElements(r,
 		&c.ChanID,
 		&c.X_Remote,
+		&c.N_Remote,
+		&c.Q_Remote,
+		&c.I_Remote,
+		&c.Adiff_Remote,
+		&c.Sdiff_Remote,
 	)
 }
 
@@ -40,6 +51,11 @@ func (c *UpdatePriceProbe) Encode(w io.Writer, pver uint32) error {
 	return writeElements(w,
 		c.ChanID,
 		c.X_Remote,
+		c.N_Remote,
+		c.Q_Remote,
+		c.I_Remote,
+		c.Adiff_Remote,
+		c.Sdiff_Remote,
 	)
 }
 
@@ -57,5 +73,5 @@ func (c *UpdatePriceProbe) MsgType() MessageType {
 // This is part of the lnwire.Message interface.
 func (c *UpdatePriceProbe) MaxPayloadLength(uint32) uint32 {
 	// FIXME:
-	return 128
+	return 512
 }
