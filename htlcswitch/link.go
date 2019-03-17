@@ -258,9 +258,9 @@ type channelLink struct {
 
 	// lp routing
 	x_local uint64
-	mu_local float32
-	mu_remote float32
-	lambda float32
+	mu_local float64
+	mu_remote float64
+	lambda float64
 
 	// FIXME: should these be in terms of millisatoshis?
 	N uint64		// value of transactions since the last UpdatePriceProbe
@@ -1760,7 +1760,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		// so we can continue the propagation of the settle message.
 		l.cfg.Peer.SendMessage(false, htlc)
 		isSettle = true
-		l.i_local -= 1
+		if l.i_local > 0 {
+			l.i_local -= 1
+		}
 
 	case *lnwire.UpdateFailHTLC:
 		// If hodl.FailOutgoing mode is active, we exit early to
@@ -1821,7 +1823,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		isSettle = true
 		// if a transaction we sent previously, failed somewhere, then we can also
 		// treat that as one fewer inflight transaction
-		l.i_local -= 1
+		if (l.i_local > 0) {
+			l.i_local -= 1
+		}
 	}
 
 	l.batchCounter++
@@ -1956,16 +1960,16 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			n_remote := msg.N_Remote
 			q_remote := msg.Q_Remote
 
-			l.mu_local = l.mu_local + KAPPA * (float32(l.n_local) + (float32(l.overflowQueue.Length()) * T_UPDATE / QUEUE_DRAIN_TIME) - float32(n_remote) - (float32(q_remote) * T_UPDATE / QUEUE_DRAIN_TIME))
+			l.mu_local = l.mu_local + float64(KAPPA) * (float64(l.n_local) + (float64(l.overflowQueue.Length()) * T_UPDATE / QUEUE_DRAIN_TIME) - float64(n_remote) - (float64(q_remote) * T_UPDATE / QUEUE_DRAIN_TIME))
 
 			if len(l.arrival_times) == 0 || len(l.service_times) == 0 {
 				return
 			}
 			aDiff, sDiff := l.getArrivalServiceTimes()
 			// TODO: should we be calculating mu_remote as well here?
-			//wx := float32(aDiff / time.Second) / float32(sDiff / time.Second)
-			//wx := float32(sDiff / time.Second) / float32(aDiff / time.Second)
-			//wy := float32(msg.Sdiff_Remote / time.Second) / float32(msg.Adiff_Remote / time.Second)
+			//wx := float64(aDiff / time.Second) / float64(sDiff / time.Second)
+			//wx := float64(sDiff / time.Second) / float64(aDiff / time.Second)
+			//wy := float64(msg.Sdiff_Remote / time.Second) / float64(msg.Adiff_Remote / time.Second)
 			wx := (float64(sDiff) / float64(time.Second)) / float64(aDiff) / float64(time.Second)
 			wy := (float64(msg.Sdiff_Remote) / float64(time.Second)) / (float64(msg.Adiff_Remote) / float64(time.Second))
 			if (math.IsNaN(wx)) {	
@@ -1975,10 +1979,10 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 				wy = 0.0
 			}
 
-			iy := float32(msg.I_Remote)
-			ix := float32(l.i_local)
-			qx := float32(l.overflowQueue.Length())
-			qy := float32(msg.Q_Remote)
+			iy := float64(msg.I_Remote)
+			ix := float64(l.i_local)
+			qx := float64(l.overflowQueue.Length())
+			qy := float64(msg.Q_Remote)
 			log.Infof("ix: %v, iy: %v\n wx: %v, wy: %v\n, qx: %v, qy: %v\n", ix, iy, wx, wy, qx, qy)
 			debug_print(fmt.Sprintf("aDiff: %v, sDiff: %v, aDiffRemote: %v, sDiffRemote: %v\n", aDiff, sDiff, msg.Adiff_Remote, msg.Sdiff_Remote))
 			debug_print(fmt.Sprintf("ix: %v, iy: %v\n wx: %v, wy: %v\n, qx: %v, qy: %v\n", ix, iy, wx, wy, qx, qy))
@@ -1989,7 +1993,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			if qy < minq {
 				minq = qy
 			}
-			l.lambda = l.lambda + ETA*T_UPDATE * (ix*float32(wx) + iy*float32(wy) - float32(l.capacity) +(2.00*BETA*minq))
+			l.lambda = l.lambda + float64(ETA)*float64(T_UPDATE) * (ix*float64(wx) + iy*float64(wy) - float64(l.capacity) +(2.00*BETA*minq))
 			log.Infof("l.mu_local: %v, l.lambda: %v\n", l.mu_local, l.lambda)
 			debug_print(fmt.Sprintf("l.mu_local: %v, l.lambda: %v\n", l.mu_local, l.lambda))
 		}
