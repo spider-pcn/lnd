@@ -25,6 +25,7 @@ import (
 	"gopkg.in/zabawaba99/firego.v1"
   "os"
   "strconv"
+	"math"
 )
 
 func init() {
@@ -1965,8 +1966,14 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			//wx := float32(aDiff / time.Second) / float32(sDiff / time.Second)
 			//wx := float32(sDiff / time.Second) / float32(aDiff / time.Second)
 			//wy := float32(msg.Sdiff_Remote / time.Second) / float32(msg.Adiff_Remote / time.Second)
-			wx := (float32(sDiff) / float32(time.Second)) / float32(aDiff) / float32(time.Second)
-			wy := (float32(msg.Sdiff_Remote) / float32(time.Second)) / (float32(msg.Adiff_Remote) / float32(time.Second))
+			wx := (float64(sDiff) / float64(time.Second)) / float64(aDiff) / float64(time.Second)
+			wy := (float64(msg.Sdiff_Remote) / float64(time.Second)) / (float64(msg.Adiff_Remote) / float64(time.Second))
+			if (math.IsNaN(wx)) {	
+				wx = 0.0
+			}
+			if (math.IsNaN(wy)) {
+				wy = 0.0
+			}
 
 			iy := float32(msg.I_Remote)
 			ix := float32(l.i_local)
@@ -1982,7 +1989,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			if qy < minq {
 				minq = qy
 			}
-			l.lambda = l.lambda + ETA*T_UPDATE * (ix*wx + iy*wy - float32(l.capacity) +(2.00*BETA*minq))
+			l.lambda = l.lambda + ETA*T_UPDATE * (ix*float32(wx) + iy*float32(wy) - float32(l.capacity) +(2.00*BETA*minq))
 			log.Infof("l.mu_local: %d, l.lambda: %d\n", l.mu_local, l.lambda)
 			debug_print(fmt.Sprintf("l.mu_local: %d, l.lambda: %d\n", l.mu_local, l.lambda))
 		}
