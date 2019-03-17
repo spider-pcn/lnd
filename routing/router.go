@@ -404,23 +404,20 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 
 
 	// update the lp route info
-	// TODO(leiy): compute the rate, instead of using 0.0
-	/*
 	dest := reversedRoute[len(reversedRoute)-1]
 
 	routeInfoEntry := (*r.missionControl.LPRouteInfoPerDest[dest])[msg.PathID]
 	totalPrice := 0
 	for _, segmentPrice := range msg.RouterChannelPrices {
-		totalPrice += segmentPrice
+		totalPrice += int(segmentPrice)
 	}
 	oldRate := routeInfoEntry.rate
 	ALPHA := 0.5
-	nextRate := oldRate + ALPHA * (1 - totalPrice)
+	nextRate := float64(oldRate) + ALPHA * (1 - float64(totalPrice))
 	if nextRate <= 0 {
 		nextRate = 0
 	}
 	routeInfoEntry.rate = nextRate
-	*/
 	log.Infof("updated LP rate")
 }
 
@@ -1910,7 +1907,7 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			// TODO(leiy): the channel size should at least be the same as the "K" in K-shortest path
 			// since we want to ensure each path have work to do when it is able to.
 			// 10 may be a good choice in real experiments
-			r.missionControl.paymentQueuePerDest[dest] = make(chan LPPayment, 3)
+			r.missionControl.paymentQueuePerDest[dest] = make(chan LPPayment, 8)
 			r.missionControl.paymentQueuePerDest[dest] <- LPPay
 			// unlock the dest-queue map
 			r.missionControl.paymentQueueMutex.Unlock()
@@ -1936,6 +1933,7 @@ type LPRouteInfo struct {
 	window        lnwire.MilliSatoshi	// window size
 	inFlight      lnwire.MilliSatoshi	// amount in flight
 	inFlightMutex *sync.Mutex
+	waitTime      float64
 }
 
 // startLPRoute handles a path.
@@ -2008,16 +2006,18 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 					path.inFlightMutex.Lock()
 					path.inFlight = path.inFlight + payment.payment.Amount
 					path.inFlightMutex.Unlock()
+
+					lastSize := payment.payment.Amount
+					waitTime := float64(lastSize) / path.rate
+					waitMicrosecond := waitTime * 1000000
+					path.waitTime = waitMicrosecond
+
+					path.ready.Reset(time.Duration(waitMicrosecond) * time.Microsecond)
+				} else {
+					path.ready.Reset(time.Duration(path.waitTime) * time.Microsecond)
 				}
 
-				// TODO(leiy): set timer for the next txn. for now, we just set it to 5 sec
-				// to create some artificial congestion
-				// lastSize := payment.payment.Amount
-				if (useWindows) {
-					path.ready.Reset(time.Duration(5) * time.Second)
-				} else {
-					path.ready.Reset(time.Duration(0) * time.Second)
-				}
+
 			}
 		}
 	}()
