@@ -1958,6 +1958,7 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 		window: pathWindowSize,
 		inFlight: 0,
 		inFlightMutex: &sync.Mutex{},
+		rate: 50000000,
 	}
 
 	go func() {
@@ -2011,8 +2012,10 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 					waitTime := float64(lastSize) / path.rate
 					waitMicrosecond := waitTime * 1000000
 					path.waitTime = waitMicrosecond
+					fmt.Printf("LP Payment size=%v, path rate=%v, wait=%v\n", lastSize, path.rate, waitMicrosecond)
 
 					path.ready.Reset(time.Duration(waitMicrosecond) * time.Microsecond)
+					fmt.Printf("Path timer reset to %v\n", waitMicrosecond)
 				} else {
 					path.ready.Reset(time.Duration(path.waitTime) * time.Microsecond)
 				}

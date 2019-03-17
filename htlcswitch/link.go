@@ -2453,8 +2453,8 @@ func (l *channelLink) LP_Price() lnwire.MilliSatoshi {
 	// FIXME: need to verify the types. does this work??
 	// equation from the specs: (2 * \lambda) + \mu_local  - \mu_remote
 	price := (2 * l.lambda) + l.mu_local - l.mu_remote
-	log.Infof("LP: uint price = %d\n", price)
-	log.Infof("LP: millisatoshi price = %d\n", price)
+	log.Infof("LP: uint price = %v\n", price)
+	log.Infof("LP: millisatoshi price = %v\n", price)
 	return lnwire.MilliSatoshi(price)
 }
 
