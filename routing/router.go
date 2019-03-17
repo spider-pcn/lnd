@@ -43,7 +43,7 @@ const (
 	defaultProbeInterval = time.Duration(time.Millisecond * 100)
 )
 
-const defaultWindowSize = 10000
+const defaultWindowSize = 200
 var useWindows bool = os.Getenv("SPIDER_USE_WINDOWS") == "1"
 
 const (
