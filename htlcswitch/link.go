@@ -1979,10 +1979,10 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			ix := float32(l.i_local)
 			qx := float32(l.overflowQueue.Length())
 			qy := float32(msg.Q_Remote)
-			log.Infof("ix: %d, iy: %d\n wx: %d, wy: %d\n, qx: %d, qy: %d\n", ix, iy, wx, wy, qx, qy)
+			log.Infof("ix: %v, iy: %v\n wx: %v, wy: %v\n, qx: %v, qy: %v\n", ix, iy, wx, wy, qx, qy)
 			debug_print(fmt.Sprintf("aDiff: %v, sDiff: %v, aDiffRemote: %v, sDiffRemote: %v\n", aDiff, sDiff, msg.Adiff_Remote, msg.Sdiff_Remote))
-			debug_print(fmt.Sprintf("ix: %d, iy: %d\n wx: %d, wy: %d\n, qx: %d, qy: %d\n", ix, iy, wx, wy, qx, qy))
-			debug_print(fmt.Sprintf("originals: ix: %d, iy: %d\n", l.i_local, msg.I_Remote))
+			debug_print(fmt.Sprintf("ix: %v, iy: %v\n wx: %v, wy: %v\n, qx: %v, qy: %v\n", ix, iy, wx, wy, qx, qy))
+			debug_print(fmt.Sprintf("originals: ix: %v, iy: %v\n", l.i_local, msg.I_Remote))
 
 			// min(qx, qy)
 			minq := qx
@@ -1990,8 +1990,8 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 				minq = qy
 			}
 			l.lambda = l.lambda + ETA*T_UPDATE * (ix*float32(wx) + iy*float32(wy) - float32(l.capacity) +(2.00*BETA*minq))
-			log.Infof("l.mu_local: %d, l.lambda: %d\n", l.mu_local, l.lambda)
-			debug_print(fmt.Sprintf("l.mu_local: %d, l.lambda: %d\n", l.mu_local, l.lambda))
+			log.Infof("l.mu_local: %v, l.lambda: %v\n", l.mu_local, l.lambda)
+			debug_print(fmt.Sprintf("l.mu_local: %v, l.lambda: %v\n", l.mu_local, l.lambda))
 		}
 
 	case *lnwire.UpdateFulfillHTLC:
