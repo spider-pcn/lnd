@@ -643,13 +643,13 @@ func (l *channelLink) startQueueWatcher() {
 				}
 				numTimedOut += 1
 			}
-			if (numTimedOut > 0) {
-				debug_print(fmt.Sprintf("interval: %d, num TIMEDOUT: %d\n", interval,
-									numTimedOut))
-			} else {
-				debug_print(fmt.Sprintf("interval: %d, num timed out: %d\n", interval,
-									numTimedOut))
-			}
+			//if (numTimedOut > 0) {
+				//debug_print(fmt.Sprintf("interval: %d, num TIMEDOUT: %d\n", interval,
+									//numTimedOut))
+			//} else {
+				//debug_print(fmt.Sprintf("interval: %d, num timed out: %d\n", interval,
+									//numTimedOut))
+			//}
 		}
 		// CHECK: is it enough to check that number of inflight htlc's are below
 		// threshold to signal to overflow queue? Should be the correct behaviour
