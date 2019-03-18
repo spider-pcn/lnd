@@ -3704,11 +3704,11 @@ func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32
 	connections := [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 0}, {1, 3}}
 
 	// Define the payment demand
-	numPayIntents := 8 // number of payment demands
+	numPayIntents := 17 // number of payment demands
 	// define the payment demands by specifying the sender and receiver (as index of node)
-	payIntents := [][]int{{0, 1}, {0, 4}, {1, 3}, {2, 1}, {2, 4}, {3, 0}, {3, 2}, {4, 2}}
+	payIntents := [][]int{{1, 2}, {3, 2}, {1, 3}, {3, 4}, {3, 1}, {1, 4}, {0 ,2}, {2, 0}, {2, 3}, {2, 1}, {4, 3}, {0, 4}, {2, 4}, {0 ,3}, {4 ,1}, {1, 0}, {4, 0}}
 	// define the rate (number of tx per unit time) of payment demands
-	payRates := []int{1, 1, 2, 1, 2, 2, 2, 1}
+	payRates := []int{2, 3, 2, 4, 1, 1, 3, 1, 1, 3, 4, 3, 3, 1, 4, 3, 3}
 
 	// Configure simulation parameters
 	const baseRate = 5      // num of payments per second for payment demands w/ payRate=1
