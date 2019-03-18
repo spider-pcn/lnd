@@ -1958,7 +1958,7 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 		window: pathWindowSize,
 		inFlight: 0,
 		inFlightMutex: &sync.Mutex{},
-		rate: 10,
+		rate: 2,
 	}
 
 	go func() {
