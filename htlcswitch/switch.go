@@ -393,7 +393,6 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
   if (LOG_FIREBASE) {
     // Latest method:
 		s.attemptedChan <- fmt.Sprintf("%x", htlc.PaymentHash)
-
     /// Method 1:
     //s.sentHtlcMutex.Lock()
     //s.sentHtlc[fmt.Sprintf("%x", htlc.PaymentHash)] = fmt.Sprintf("%d", int32(time.Now().Unix()))
@@ -1869,7 +1868,8 @@ func (s *Switch) Start() error {
 
 	log.Infof("Starting HTLC Switch")
 	log.Infof("nodeName: %v, public-key: %v",
-							os.Getenv("NODENAME"), s.cfg.SelfKey)
+							s.getSwitchKey(),
+							s.cfg.SelfKey.SerializeCompressed())
 
 	blockEpochStream, err := s.cfg.Notifier.RegisterBlockEpochNtfn(nil)
 	if err != nil {

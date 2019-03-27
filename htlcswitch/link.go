@@ -505,89 +505,26 @@ func (l *channelLink) periodicUpdatePriceProbe()  {
 	}
 }
 
-func (l *channelLink) updateFirebase()  {
-	switchKey := l.cfg.Switch.getSwitchKey()
+func (l *channelLink) periodicLogging()  {
+	//switchKey := l.cfg.Switch.getSwitchKey()
 	chanID := fmt.Sprintf("%v", l.ShortChanID())
-  fb := firego.New(FIREBASE_URL + EXP_NAME + "/channelStats/" + switchKey, nil)
 	i := 0
-  var oldVals map[string] string = nil
-  EXP_TIME, err1 := strconv.Atoi(os.Getenv("EXP_TIME"))
-  if (err1 != nil) {
-    debug_print("could not read the $EXP_TIME environment variable\n")
-    return
-  }
-	//loggedPaths := false
 	for {
-    debug_print(fmt.Sprintf("updateFirebase: i = %d\n", i))
 		// going to store queue information, for this particular channel.
-		vals := make(map[string] map[string] string)
+		//vals := make(map[string] map[string] string)
 		qlen := fmt.Sprintf("%d", l.overflowQueue.Length())
 		totalAmt := fmt.Sprintf("%v", l.overflowQueue.TotalHtlcAmount())
 		snapshot := l.channel.StateSnapshot()
 		sent := fmt.Sprintf("%v", snapshot.TotalMSatSent)
 		rcvd := fmt.Sprintf("%v", snapshot.TotalMSatReceived)
 		capacity := fmt.Sprintf("%v", snapshot.Capacity)
-		debug_print(fmt.Sprintf("capacity is: %s\n", capacity))
-		//chainHash := fmt.Sprintf("%v", snapshot.ChainHash)
 		locBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.LocalBalance)
 		remBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.RemoteBalance)
-		//commitHt := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitHeight)
-		//commitFee := fmt.Sprintf("%v", snapshot.ChannelCommitment.CommitFee)
 		bandwidth := fmt.Sprintf("%v", l.Bandwidth())
-		curVals := make(map[string] string)
-		curVals["idx"] = fmt.Sprintf("%d", i)
-		curVals["qlen"] = qlen
-		curVals["qTotalAmt"] = totalAmt
-		curVals["sent"] = sent
-		curVals["rcvd"] = rcvd
-		curVals["capacity"] = capacity
-		//curVals["chainHash"] = chainHash
-		curVals["locBal"] = locBal
-		curVals["remBal"] = remBal
-		//curVals["commitHeight"] = commitHt
-		//curVals["commitFee"] = commitFee
-		curVals["bandwidth"] = bandwidth
-		// set it for uploading
-		vals[chanID] = curVals
-    new_data := false
-    // check if this data is new
-    if (oldVals != nil) {
-      for k, v := range curVals {
-        if (k == "idx") {
-          continue
-        }
-        if (v != oldVals[k]) {
-          new_data = true
-        }
-      }
-    }
-    if (new_data || i < EXP_TIME+10) {
-      //fmt.Println("will send new data to firebase")
-			go func() {
-				if _, err := fb.Push(vals); err != nil {
-					fmt.Println("error when logging to firebase")
-					fmt.Println(err);
-				}
-			}()
-    } else {
-			//l.logAggregateStatsFb()
-      debug_print("no new data to send to firebase\n")
-			//if (!loggedPaths) {
-				//debug_print("going to log path information for fb\n")
-				//fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
-																		//switchKey + "/"+ chanID + "/upstream/", nil)
-				//fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
-																		//switchKey + "/"+ chanID + "/downstream/", nil)
-				//if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
-					//debug_print("error when logging upstream paths to firebase")
-				//}
-				//if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
-					//debug_print("error when logging upstream paths to firebase")
-				//}
-				//loggedPaths = true
-			//}
-    }
-    oldVals = curVals
+		log.Infof(`i: %d, time: %v, node: %s, peer: %s, chanID: %s, qlen: %s,
+		totalAmt: %s, sent: %s, rcvd: %s, locBal: %s, remBal: %s, bandwidth: %s,
+		capacity: %s`, i, time.Now(), l.nodeName, l.peerName, chanID, qlen,
+		totalAmt, sent, rcvd, locBal, remBal, bandwidth, capacity)
 		i += 1
 		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
 	}
@@ -688,15 +625,17 @@ func (l *channelLink) Start() error {
 		log.Warn(err)
 		return err
 	}
-	l.nodeName = os.Getenv("NODENAME")
+	//l.nodeName = os.Getenv("NODENAME")
+	l.nodeName = l.cfg.Switch.getSwitchKey()
 	// need to add this by communicating with the peer.
 	l.peerName = "unknown"
 	if (SPIDER_FLAG) {
 		go l.startQueueWatcher()
 	}
 
+	go l.periodicLogging()
 	if (LOG_FIREBASE) {
-		go l.updateFirebase()
+		go l.periodicLogging()
 
 		switchKey := l.cfg.Switch.getSwitchKey()
     // chanID := fmt.Sprintf("%v", l.ShortChanID())

@@ -419,7 +419,7 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 	routeInfoEntry.rate = nextRate
 	nodeName := os.Getenv("NODENAME")
 	log.Infof("LP: node %v -> %v, price: %v, rate: %v, time: %v",
-					nodeName, dest, totalPrice, nextRate)
+					nodeName, dest, totalPrice, nextRate, time.Now())
 	//log.Infof("updated LP rate")
 }
 
