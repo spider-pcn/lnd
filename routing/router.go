@@ -402,7 +402,6 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 		reversedRoute[len(reversedRoute)/2] = Vertex(msg.Route[len(reversedRoute)/2])
 	}
 
-
 	// update the lp route info
 	dest := reversedRoute[len(reversedRoute)-1]
 
@@ -418,7 +417,9 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 		nextRate = 0
 	}
 	routeInfoEntry.rate = nextRate
-	log.Infof("updated LP rate")
+	nodeName := os.Getenv("NODENAME")
+	log.Infof("LP: node %v -> %v, price: %v, rate: %v", nodeName, dest, totalPrice, nextRate)
+	//log.Infof("updated LP rate")
 }
 
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
@@ -1891,6 +1892,9 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			// but if the channel buffer is full, just return and tell the sender
 			select {
 			case q <- LPPay:
+				nodeName := os.Getenv("NODENAME")
+				log.Infof("%v -> %v added to queue", nodeName, dest)
+				log.Infof("%v queue size: %d", nodeName, len(q))
 				log.Debugf("Payment added to the queue, queue size is %v", len(q))
 			default:
 				log.Debugf("Declining sending payment due to full queue")
