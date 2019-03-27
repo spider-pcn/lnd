@@ -628,7 +628,11 @@ func (l *channelLink) Start() error {
 	//l.nodeName = os.Getenv("NODENAME")
 	l.nodeName = l.cfg.Switch.getSwitchKey()
 	// need to add this by communicating with the peer.
-	l.peerName = "unknown"
+	//l.peerName = "unknown"
+	l.peerName = fmt.Sprintf("%x", l.cfg.Peer.PubKey())
+	log.Infof("l.peerName: %s", l.peerName)
+	log.Infof("l.peerName2: %s", l.cfg.Peer.IdentityKey().SerializeCompressed())
+
 	if (SPIDER_FLAG) {
 		go l.startQueueWatcher()
 	}

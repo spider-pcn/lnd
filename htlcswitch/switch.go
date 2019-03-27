@@ -1867,7 +1867,8 @@ func (s *Switch) Start() error {
   }
 
 	log.Infof("Starting HTLC Switch")
-	log.Infof("nodeName: %v, public-key: %v",
+
+	log.Infof("Spider: nodeName: %v, public-key: %x",
 							s.getSwitchKey(),
 							s.cfg.SelfKey.SerializeCompressed())
 

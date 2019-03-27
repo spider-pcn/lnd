@@ -238,6 +238,9 @@ func newRouteTuple(amt lnwire.MilliSatoshi, dest []byte) routeTuple {
 // automatically as new blocks are discovered which spend certain known funding
 // outpoints, thereby closing their respective channels.
 type ChannelRouter struct {
+	// spider specific
+	nodeName string
+
 	ntfnClientCounter uint64 // To be used atomically.
 
 	started uint32 // To be used atomically.
@@ -387,8 +390,7 @@ func (r *ChannelRouter) updateDestRouteBalances(msg *lnwire.ProbeRouteChannelBal
 
 /// Copy of HandleCompletedProbe.
 func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPrices, sendNewProbe bool) {
-	log.Infof("LP: HandleCompletedProbeLP\n")
-	log.Infof("LP: final prices: %v \n", msg.RouterChannelPrices)
+	log.Infof("Spider LP: final prices: %v \n", msg.RouterChannelPrices)
 	// reverse the route because probe comes back reversed
 	// create a new array of type Vertex also to avoid casts from lnwire.Vertex to Vertex
 	// and vice versa
@@ -418,9 +420,8 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 	}
 	routeInfoEntry.rate = nextRate
 	nodeName := os.Getenv("NODENAME")
-	log.Infof("LP: node %v -> %v, price: %v, rate: %v, time: %v",
+	log.Infof("Spider LP: node %v -> %v, price: %v, rate: %v, time: %v",
 					nodeName, dest, totalPrice, nextRate, time.Now())
-	//log.Infof("updated LP rate")
 }
 
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
@@ -488,6 +489,8 @@ func (r *ChannelRouter) Start() error {
 	if !atomic.CompareAndSwapUint32(&r.started, 0, 1) {
 		return nil
 	}
+	// pari: better way for this?
+	r.nodeName =  os.Getenv("NODENAME")
 
 	log.Tracef("Channel Router starting")
 
@@ -1744,8 +1747,13 @@ func (r *ChannelRouter) SendPayment(payment *LightningPayment) ([32]byte, *Route
 	if err != nil {
 		return [32]byte{}, nil, err
 	}
-
-	return r.sendPayment(payment, paySession)
+	dest := NewVertex(payment.Target)
+	log.Infof("Spider: %v -> %v payment", r.nodeName, dest)
+	// pari FIXME: this is always blocking, right?
+	result, route, err := r.sendPayment(payment, paySession)
+	log.Infof("Spider: %v -> %v successful", r.nodeName, dest)
+	log.Infof("Spider: result: %v, route: %v, err: %v", result, route, err)
+	return result, route, err
 }
 
 // SendToRoute attempts to send a payment as described within the passed
@@ -1774,7 +1782,6 @@ func (r *ChannelRouter) SendToRoute(routes []*Route,
 // path the successful payment traversed within the network to reach the
 // destination. Additionally, the payment preimage will also be returned.
 func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([32]byte, *Route, error) {
-
 	var route *Route
 	switch spiderAlgo {
 	case ShortestPath:
@@ -1893,11 +1900,11 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			// but if the channel buffer is full, just return and tell the sender
 			select {
 			case q <- LPPay:
-				nodeName := os.Getenv("NODENAME")
-				log.Infof("%v -> %v added to queue", nodeName, dest)
-				log.Infof("%v queue size: %d", nodeName, len(q))
+				log.Infof("Spider LP: %v -> %v added to queue", r.nodeName, dest)
+				log.Infof("Spider LP: %v queue size: %d", r.nodeName, len(q))
 				log.Debugf("Payment added to the queue, queue size is %v", len(q))
 			default:
+				log.Infof("Spider LP: %v -> %v declined", r.nodeName, dest)
 				log.Debugf("Declining sending payment due to full queue")
 				return [32]byte{}, nil, errors.New("Payment can not be queued due to full buffer, and timed out by LP sender")
 			}
