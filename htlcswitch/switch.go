@@ -1868,6 +1868,8 @@ func (s *Switch) Start() error {
   }
 
 	log.Infof("Starting HTLC Switch")
+	log.Infof("nodeName: %v, public-key: %v",
+							os.Getenv("NODENAME"), s.cfg.SelfKey)
 
 	blockEpochStream, err := s.cfg.Notifier.RegisterBlockEpochNtfn(nil)
 	if err != nil {

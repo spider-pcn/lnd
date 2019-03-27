@@ -257,6 +257,8 @@ type channelLink struct {
   //upstreamFirebaseConnMutex sync.Mutex
 
 	// lp routing
+	nodeName string // spider specific
+	peerName string // spider-specific
 	x_local uint64
 	mu_local float64
 	mu_remote float64
@@ -461,17 +463,15 @@ func (l *channelLink) getArrivalServiceTimes() (time.Duration, time.Duration) {
 
 func (l *channelLink) periodicUpdatePriceProbe()  {
 	//time.Sleep(time.Duration(10) * time.Second)
-	debug_print("periodicUpdatePriceProbe started!\n")
-	log.Infof("LP: periodicUpdatePriceProbe started")
-
+	//log.Infof("LP: periodicUpdatePriceProbe started")
+	nodeName := os.Getenv("NODENAME")
 	for {
 		time.Sleep(time.Duration(T_UPDATE) * time.Second)
 		// FIXME: maybe this should not be uint32?
-		log.Infof("LP: l.N value is %d\n", l.N)
+		//log.Infof("LP: l.N value is %d\n", l.N)
 		l.x_local = uint64(float64(l.N) / float64(T_UPDATE))
 		// FIXME: is this correct casting?
 		queue_len := uint64(l.overflowQueue.Length())
-		log.Infof("LP: queueLen: %d\n", queue_len)
 
 		if len(l.arrival_times) == 0 || len(l.service_times) == 0 {
 			continue
@@ -490,7 +490,10 @@ func (l *channelLink) periodicUpdatePriceProbe()  {
 			Adiff_Remote: aVal,
 			Sdiff_Remote: sVal,
 		}
-		log.Infof("LP: going to send update, with x = %d\n", l.x_local)
+		log.Infof(`node: %s, peer: %s xlocal: %d, nlocal: %d,
+		ilocal: %d, queuelen: %d, nlocal %d, aVal: %d, sVal: %d`,
+		nodeName, "peer", l.x_local, l.n_local, l.i_local, queue_len, l.n_local,
+					aVal, sVal)
 
 		if err := l.cfg.Peer.SendMessage(true, msg); err != nil {
 			log.Infof("LP: periodicUpdatePriceProbe failed!\n")
@@ -685,11 +688,10 @@ func (l *channelLink) Start() error {
 		log.Warn(err)
 		return err
 	}
-
-	fmt.Println("starting channel link!")
-	debug_print("starting channel link!")
+	l.nodeName = os.Getenv("NODENAME")
+	// need to add this by communicating with the peer.
+	l.peerName = "unknown"
 	if (SPIDER_FLAG) {
-		debug_print("SPIDER FLAG")
 		go l.startQueueWatcher()
 	}
 
@@ -1956,7 +1958,6 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		if (LP_ROUTING) {
 			// probe sent by other side with their values. Will calculate / update
 			// local lambda / and mu values based on this.
-			log.Infof("got update price probe!!!!\n")
 			n_remote := msg.N_Remote
 			q_remote := msg.Q_Remote
 
@@ -1972,10 +1973,13 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			//wy := float64(msg.Sdiff_Remote / time.Second) / float64(msg.Adiff_Remote / time.Second)
 			wx := (float64(sDiff) / float64(time.Second)) / float64(aDiff) / float64(time.Second)
 			wy := (float64(msg.Sdiff_Remote) / float64(time.Second)) / (float64(msg.Adiff_Remote) / float64(time.Second))
-			if (math.IsNaN(wx)) {	
+
+			if (math.IsNaN(wx)) {
+				log.Infof("wx is NaN. Setting = 0")
 				wx = 0.0
 			}
 			if (math.IsNaN(wy)) {
+				log.Infof("wy is NaN. Setting = 0")
 				wy = 0.0
 			}
 
@@ -1983,19 +1987,19 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			ix := float64(l.i_local)
 			qx := float64(l.overflowQueue.Length())
 			qy := float64(msg.Q_Remote)
-			log.Infof("ix: %v, iy: %v\n wx: %v, wy: %v\n, qx: %v, qy: %v\n", ix, iy, wx, wy, qx, qy)
-			debug_print(fmt.Sprintf("aDiff: %v, sDiff: %v, aDiffRemote: %v, sDiffRemote: %v\n", aDiff, sDiff, msg.Adiff_Remote, msg.Sdiff_Remote))
-			debug_print(fmt.Sprintf("ix: %v, iy: %v\n wx: %v, wy: %v\n, qx: %v, qy: %v\n", ix, iy, wx, wy, qx, qy))
-			debug_print(fmt.Sprintf("originals: ix: %v, iy: %v\n", l.i_local, msg.I_Remote))
-
 			// min(qx, qy)
 			minq := qx
 			if qy < minq {
 				minq = qy
 			}
 			l.lambda = l.lambda + float64(ETA)*float64(T_UPDATE) * (ix*float64(wx) + iy*float64(wy) - float64(l.capacity) +(2.00*BETA*minq))
-			log.Infof("l.mu_local: %v, l.lambda: %v\n", l.mu_local, l.lambda)
-			debug_print(fmt.Sprintf("l.mu_local: %v, l.lambda: %v\n", l.mu_local, l.lambda))
+
+			log.Infof(`node: %s, peer: %s, ix: %v, iy: %v,
+						wx: %v, wy: %v, qx: %v, qy: %v, aDiffRemote: %v,
+						sDiffRemote: %v, aDiff: %v, sDiff: %v, mu_local: %v, lambda: %v,
+						n_local: %v, n_remote: %v, q_remote: %v`,
+						l.nodeName, l.peerName, ix, iy, wx, wy, qx, qy, l.mu_local,
+						l.lambda, l.n_local, n_remote, q_remote)
 		}
 
 	case *lnwire.UpdateFulfillHTLC:
