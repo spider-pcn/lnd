@@ -3,7 +3,6 @@ package channeldb
 import (
 	"bytes"
 	"io"
-	"sort"
 	"time"
 
 	"github.com/coreos/bbolt"
@@ -102,51 +101,7 @@ func decodeForwardingEvent(r io.Reader, f *ForwardingEvent) error {
 // Before inserting, the set of events will be sorted according to their
 // timestamp. This ensures that all writes to disk are sequential.
 func (f *ForwardingLog) AddForwardingEvents(events []ForwardingEvent) error {
-	// Before we create the database transaction, we'll ensure that the set
-	// of forwarding events are properly sorted according to their
-	// timestamp.
-	sort.Slice(events, func(i, j int) bool {
-		return events[i].Timestamp.Before(events[j].Timestamp)
-	})
-
-	var timestamp [8]byte
-
-	return f.db.Batch(func(tx *bolt.Tx) error {
-		// First, we'll fetch the bucket that stores our time series
-		// log.
-		logBucket, err := tx.CreateBucketIfNotExists(
-			forwardingLogBucket,
-		)
-		if err != nil {
-			return err
-		}
-
-		// With the bucket obtained, we can now begin to write out the
-		// series of events.
-		for _, event := range events {
-			var eventBytes [forwardingEventSize]byte
-			eventBuf := bytes.NewBuffer(eventBytes[0:0:forwardingEventSize])
-
-			// First, we'll serialize this timestamp into our
-			// timestamp buffer.
-			byteOrder.PutUint64(
-				timestamp[:], uint64(event.Timestamp.UnixNano()),
-			)
-
-			// With the key encoded, we'll then encode the event
-			// into our buffer, then write it out to disk.
-			err := encodeForwardingEvent(eventBuf, &event)
-			if err != nil {
-				return err
-			}
-			err = logBucket.Put(timestamp[:], eventBuf.Bytes())
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
+	return nil
 }
 
 // ForwardingEventQuery represents a query to the forwarding log payment

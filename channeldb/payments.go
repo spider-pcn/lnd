@@ -206,8 +206,11 @@ func UpdatePaymentStatusTx(tx *bolt.Tx,
 	if err != nil {
 		return err
 	}
-
-	return paymentStatuses.Put(paymentHash[:], status.Bytes())
+	if status == StatusCompleted {
+		return paymentStatuses.Delete(paymentHash[:])
+	} else {
+		return paymentStatuses.Put(paymentHash[:], status.Bytes())
+	}
 }
 
 // FetchPaymentStatus returns the payment status for outgoing payment.

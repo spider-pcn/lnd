@@ -686,6 +686,7 @@ func putInvoice(invoices, invoiceIndex, addIndex *bolt.Bucket,
 	// Next, we'll obtain the next add invoice index (sequence
 	// number), so we can properly place this invoice within this
 	// event stream.
+	/*
 	nextAddSeqNo, err := addIndex.NextSequence()
 	if err != nil {
 		return 0, err
@@ -699,8 +700,9 @@ func putInvoice(invoices, invoiceIndex, addIndex *bolt.Bucket,
 	if err := addIndex.Put(seqNoBytes[:], invoiceKey[:]); err != nil {
 		return 0, err
 	}
+	*/
 
-	i.AddIndex = nextAddSeqNo
+	i.AddIndex = 0
 
 	// Finally, serialize the invoice itself to be written to the disk.
 	var buf bytes.Buffer
@@ -712,7 +714,7 @@ func putInvoice(invoices, invoiceIndex, addIndex *bolt.Bucket,
 		return 0, err
 	}
 
-	return nextAddSeqNo, nil
+	return 0, nil
 }
 
 func serializeInvoice(w io.Writer, i *Invoice) error {
@@ -860,6 +862,7 @@ func settleInvoice(invoices, settleIndex *bolt.Bucket, invoiceNum []byte,
 	// Now that we know the invoice hasn't already been settled, we'll
 	// update the settle index so we can place this settle event in the
 	// proper location within our time series.
+	/*
 	nextSettleSeqNo, err := settleIndex.NextSequence()
 	if err != nil {
 		return nil, err
@@ -870,18 +873,19 @@ func settleInvoice(invoices, settleIndex *bolt.Bucket, invoiceNum []byte,
 	if err := settleIndex.Put(seqNoBytes[:], invoiceNum); err != nil {
 		return nil, err
 	}
+	*/
 
 	invoice.AmtPaid = amtPaid
 	invoice.Terms.Settled = true
 	invoice.SettleDate = time.Now()
-	invoice.SettleIndex = nextSettleSeqNo
+	invoice.SettleIndex = 0
 
 	var buf bytes.Buffer
 	if err := serializeInvoice(&buf, &invoice); err != nil {
 		return nil, err
 	}
 
-	if err := invoices.Put(invoiceNum[:], buf.Bytes()); err != nil {
+	if err := invoices.Delete(invoiceNum[:]); err != nil {
 		return nil, err
 	}
 
