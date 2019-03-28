@@ -1918,12 +1918,14 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			}
 			l.lambda = l.lambda + float64(ETA)*float64(T_UPDATE) * (ix*float64(wx) + iy*float64(wy) - float64(l.capacity) +(2.00*BETA*minq))
 
-			log.Infof(`node: %s, peer: %s, ix: %v, iy: %v,
-						wx: %v, wy: %v, qx: %v, qy: %v, aDiffRemote: %v,
-						sDiffRemote: %v, aDiff: %v, sDiff: %v, mu_local: %v, lambda: %v,
-						n_local: %v, n_remote: %v, q_remote: %v`,
-						l.nodeName, l.peerName, ix, iy, wx, wy, qx, qy, l.mu_local,
-						l.lambda, l.n_local, n_remote, q_remote)
+			log.Infof("LP Spider: info_type: updatePriceProbe,"+
+						"node: %s, peer: %s, time: %d, ix: %v, iy: %v,"+
+						"wx: %v, wy: %v, qx: %v, qy: %v, aDiffRemote: %v,"+
+						"sDiffRemote: %v, aDiff: %v, sDiff: %v, mu_local: %v,"+
+						"lambda: %v, n_local: %v, n_remote: %v, q_remote: %v",
+						l.nodeName, l.peerName, int32(time.Now().Unix()), ix,
+						iy, wx, wy, qx, qy, l.mu_local, l.lambda, l.n_local,
+						n_remote, q_remote)
 		}
 
 	case *lnwire.UpdateFulfillHTLC:
