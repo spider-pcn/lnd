@@ -874,7 +874,7 @@ func newServer(listenAddrs []net.Addr, chanDB *channeldb.DB, cc *chainControl,
 			// channel bandwidth.
 			return uint16(lnwallet.MaxHTLCNumber / 2)
 		},
-		ZombieSweeperInterval: 1 * time.Minute,
+		ZombieSweeperInterval: 2 * time.Minute,
 		ReservationTimeout:    10 * time.Minute,
 		MinChanSize:           btcutil.Amount(cfg.MinChanSize),
 	})
