@@ -3713,7 +3713,7 @@ func testSpiderAlgorithms(net *lntest.NetworkHarness, t *harnessTest, algo int32
 	// Configure simulation parameters
 	const baseRate = 5      // num of payments per second for payment demands w/ payRate=1
 	const paymentAmt = 5000 // size of each transaction
-	const testTime = 60     // duration of the simulation
+	const testTime = 120     // duration of the simulation
 
 	// Construct the nodes
 	for i := 0; i < numNodes; i++ {

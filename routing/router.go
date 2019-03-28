@@ -390,7 +390,7 @@ func (r *ChannelRouter) updateDestRouteBalances(msg *lnwire.ProbeRouteChannelBal
 
 /// Copy of HandleCompletedProbe.
 func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPrices, sendNewProbe bool) {
-	log.Infof("Spider LP: final prices: %v \n", msg.RouterChannelPrices)
+	//log.Infof("LP Spider: info_type: prices, prices: %v", msg.RouterChannelPrices)
 	// reverse the route because probe comes back reversed
 	// create a new array of type Vertex also to avoid casts from lnwire.Vertex to Vertex
 	// and vice versa
@@ -420,8 +420,9 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 	}
 	routeInfoEntry.rate = nextRate
 	nodeName := os.Getenv("NODENAME")
-	log.Infof("Spider LP: node %v -> %v, price: %v, rate: %v, time: %v",
-					nodeName, dest, totalPrice, nextRate, time.Now())
+	log.Infof("LP Spider: info_type: path_prices,"+
+	"sender: %s, dest: %v, price: %v, rate: %v, time: %v",
+	nodeName, dest, totalPrice, nextRate, int32(time.Now().Unix()))
 }
 
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
@@ -1747,12 +1748,7 @@ func (r *ChannelRouter) SendPayment(payment *LightningPayment) ([32]byte, *Route
 	if err != nil {
 		return [32]byte{}, nil, err
 	}
-	dest := NewVertex(payment.Target)
-	log.Infof("Spider: %v -> %v payment", r.nodeName, dest)
-	// pari FIXME: this is always blocking, right?
 	result, route, err := r.sendPayment(payment, paySession)
-	log.Infof("Spider: %v -> %v successful", r.nodeName, dest)
-	log.Infof("Spider: result: %v, route: %v, err: %v", result, route, err)
 	return result, route, err
 }
 
@@ -1900,11 +1896,14 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			// but if the channel buffer is full, just return and tell the sender
 			select {
 			case q <- LPPay:
-				log.Infof("Spider LP: %v -> %v added to queue", r.nodeName, dest)
-				log.Infof("Spider LP: %v queue size: %d", r.nodeName, len(q))
+				log.Infof("LP Spider: info_type: lp_queue," +
+				"time: %d, sender: %v, dest: %v, status: accepted, queue_size: %d",
+				int32(time.Now().Unix()), r.nodeName, dest, len(q))
 				log.Debugf("Payment added to the queue, queue size is %v", len(q))
 			default:
-				log.Infof("Spider LP: %v -> %v declined", r.nodeName, dest)
+				log.Infof("LP Spider: info_type: lp_queue," +
+				"time: %d, sender: %v, dest: %v, status: declined, queue_size: %d",
+				int32(time.Now().Unix()), r.nodeName, dest, len(q))
 				log.Debugf("Declining sending payment due to full queue")
 				return [32]byte{}, nil, errors.New("Payment can not be queued due to full buffer, and timed out by LP sender")
 			}
@@ -2342,6 +2341,10 @@ func (r *ChannelRouter) getKShortestPaths(dest Vertex, payment *LightningPayment
 func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 	paySession *paymentSession) ([32]byte, *Route, error) {
 
+	dest := NewVertex(payment.Target)
+	log.Infof("Spider: info_type: payment_attempted, sender: %v, dest: %v",
+				r.nodeName, dest)
+
 	log.Tracef("Dispatching route for lightning payment: %v",
 		newLogClosure(func() string {
 			// Remove the public key curve parameters when logging
@@ -2697,6 +2700,11 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			}
 		}
 
+		// pari: this should only reach if successful.
+		log.Infof("Spider: info_type: payment_success, time: %d, sender: %v, dest: %v",
+					int32(time.Now().Unix()), r.nodeName, dest)
+		log.Infof("Spider: info_type: payment_result" +
+				"result: %v, route: %v, err: %v", preImage, route)
 		return preImage, route, nil
 	}
 }

@@ -464,7 +464,6 @@ func (l *channelLink) getArrivalServiceTimes() (time.Duration, time.Duration) {
 func (l *channelLink) periodicUpdatePriceProbe()  {
 	//time.Sleep(time.Duration(10) * time.Second)
 	//log.Infof("LP: periodicUpdatePriceProbe started")
-	nodeName := os.Getenv("NODENAME")
 	for {
 		time.Sleep(time.Duration(T_UPDATE) * time.Second)
 		// FIXME: maybe this should not be uint32?
@@ -490,10 +489,11 @@ func (l *channelLink) periodicUpdatePriceProbe()  {
 			Adiff_Remote: aVal,
 			Sdiff_Remote: sVal,
 		}
-		log.Infof(`node: %s, peer: %s xlocal: %d, nlocal: %d,
-		ilocal: %d, queuelen: %d, nlocal %d, aVal: %d, sVal: %d`,
-		nodeName, "peer", l.x_local, l.n_local, l.i_local, queue_len, l.n_local,
-					aVal, sVal)
+		log.Infof("Spider: info_type: updateLocalPrice, time: %d, node: %s," +
+		"peer: %s, xlocal: %d, nlocal: %d," +
+		"ilocal: %d, queuelen: %d, aVal: %d, sVal: %d",
+		int32(time.Now().Unix()), l.nodeName, l.peerName, l.x_local, l.n_local,
+		l.i_local, queue_len, aVal, sVal)
 
 		if err := l.cfg.Peer.SendMessage(true, msg); err != nil {
 			log.Infof("LP: periodicUpdatePriceProbe failed!\n")
@@ -521,10 +521,13 @@ func (l *channelLink) periodicLogging()  {
 		locBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.LocalBalance)
 		remBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.RemoteBalance)
 		bandwidth := fmt.Sprintf("%v", l.Bandwidth())
-		log.Infof(`i: %d, time: %v, node: %s, peer: %s, chanID: %s, qlen: %s,
-		totalAmt: %s, sent: %s, rcvd: %s, locBal: %s, remBal: %s, bandwidth: %s,
-		capacity: %s`, i, time.Now(), l.nodeName, l.peerName, chanID, qlen,
-		totalAmt, sent, rcvd, locBal, remBal, bandwidth, capacity)
+		log.Infof("Spider: info_type: periodicStats," +
+		"time: %v, i: %d, node: %s, peer: %s, chanID: %s," +
+		"qlen: %s, totalAmt: %s, sent: %s, rcvd: %s, locBal: %s," +
+		"remBal: %s, bandwidth: %s, capacity: %s",
+		int32(time.Now().Unix()), i, l.nodeName, l.peerName, chanID, qlen, totalAmt, sent, rcvd,
+		locBal, remBal, bandwidth, capacity)
+
 		i += 1
 		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
 	}
@@ -631,34 +634,12 @@ func (l *channelLink) Start() error {
 	//l.peerName = "unknown"
 	l.peerName = fmt.Sprintf("%x", l.cfg.Peer.PubKey())
 	log.Infof("l.peerName: %s", l.peerName)
-	log.Infof("l.peerName2: %s", l.cfg.Peer.IdentityKey().SerializeCompressed())
 
 	if (SPIDER_FLAG) {
 		go l.startQueueWatcher()
 	}
 
 	go l.periodicLogging()
-	if (LOG_FIREBASE) {
-		go l.periodicLogging()
-
-		switchKey := l.cfg.Switch.getSwitchKey()
-    // chanID := fmt.Sprintf("%v", l.ShortChanID())
-
-    // which channel we receive the payment on shouldn't matter for computing
-    // success / failure percentages
-		l.successFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
-								"/aggregateStats/success/" + switchKey, nil)
-		l.successChan = make(chan string, 10000)
-		go l.updateAggregateStatsFirebase()
-
-    // for paths:
-    //l.downstreamFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
-                //"/paths/downstream/" + switchKey + "/" + chanID, nil)
-    //l.upstreamFirebaseConn = firego.New(FIREBASE_URL + EXP_NAME +
-                //"/paths/upstream/" + switchKey + "/" + chanID, nil)
-		//l.upstreamPathStats = make([]string, 0)
-		//l.downstreamPathStats = make([]string, 0)
-	}
 
 	if (LP_ROUTING) {
 		go l.periodicUpdatePriceProbe()
@@ -675,7 +656,7 @@ func (l *channelLink) Start() error {
 		// pari: FIXME: snapshot.Capacity / transaction_size
 
 		l.capacity = 100
-		log.Infof("LP: capacity initialized to: %d\n", l.capacity)
+		//log.Infof("Spider LP: capacity initialized to: %d\n", l.capacity)
 
 		l.i_local = 0
 		l.n_local = 0
@@ -2400,8 +2381,8 @@ func (l *channelLink) LP_Price() lnwire.MilliSatoshi {
 	// FIXME: need to verify the types. does this work??
 	// equation from the specs: (2 * \lambda) + \mu_local  - \mu_remote
 	price := (2 * l.lambda) + l.mu_local - l.mu_remote
-	log.Infof("LP: uint price = %v\n", price)
-	log.Infof("LP: millisatoshi price = %v\n", price)
+	log.Infof("LP Spider: info_type: LP_Price, time: %d, nodeName: %v, price: %v",
+			int32(time.Now().Unix()), l.nodeName, price)
 	return lnwire.MilliSatoshi(price)
 }
 
