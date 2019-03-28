@@ -2342,8 +2342,8 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 	paySession *paymentSession) ([32]byte, *Route, error) {
 
 	dest := NewVertex(payment.Target)
-	log.Infof("Spider: info_type: payment_attempted, sender: %v, dest: %v",
-				r.nodeName, dest)
+	log.Infof("Spider: info_type: payment_attempted, time: %d, sender: %v, dest: %v",
+				int32(time.Now().Unix()), r.nodeName, dest)
 
 	log.Tracef("Dispatching route for lightning payment: %v",
 		newLogClosure(func() string {
