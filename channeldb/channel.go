@@ -530,6 +530,8 @@ func (c *OpenChannel) RefreshShortChanID() error {
 func updateChanBucket(tx *bolt.Tx, nodeKey *btcec.PublicKey,
 	outPoint *wire.OutPoint, chainHash chainhash.Hash) (*bolt.Bucket, error) {
 
+	fmt.Println("Mohammad!")
+
 	// First fetch the top level bucket which stores all data related to
 	// current, active channels.
 	openChanBucket := tx.Bucket(openChannelBucket)
