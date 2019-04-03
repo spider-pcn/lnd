@@ -94,6 +94,7 @@ var (
 // os.Exit() is called.
 func lndMain() error {
 	defer func() {
+		fmt.Printf("hitting the defer for sure")
 		if logRotatorPipe != nil {
 			ltndLog.Info("Shutdown complete")
 		}
@@ -446,6 +447,7 @@ func lndMain() error {
 	// Wait for shutdown signal from either a graceful server stop or from
 	// the interrupt handler.
 	<-signal.ShutdownChannel()
+	ltndLog.Info("exiting main")
 	return nil
 }
 
@@ -564,7 +566,7 @@ func genCertPair(certFile, keyFile string) error {
 
 		KeyUsage: x509.KeyUsageKeyEncipherment |
 			x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		IsCA: true, // so can sign self.
+		IsCA:                  true, // so can sign self.
 		BasicConstraintsValid: true,
 
 		DNSNames:    dnsNames,
