@@ -415,7 +415,7 @@ func lndMain() error {
 			return err
 		}
 
-		ltndLog.Infof("Chain backend is fully synced (end_height=%v)!",
+		ltndLog.Errorf("Chain backend is fully synced (end_height=%v)!",
 			bestHeight)
 	}
 
