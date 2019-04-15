@@ -44,6 +44,7 @@ const (
 )
 
 const defaultWindowSize = 200
+
 var useWindows bool = os.Getenv("SPIDER_USE_WINDOWS") == "1"
 
 const (
@@ -183,7 +184,7 @@ type Config struct {
 	// SendProbeToFirstHop is a function that sends the probe to
 	// the first hop in the route to be probed after filling out the
 	// information for the first outgoing channel
-	SendProbeToFirstHop func(msg *lnwire.ProbeRouteChannelBalances)
+	SendProbeToFirstHop   func(msg *lnwire.ProbeRouteChannelBalances)
 	SendProbeToFirstHopLP func(msg *lnwire.ProbeRouteChannelPrices)
 
 	// ChannelPruneExpiry is the duration used to determine if a channel
@@ -414,16 +415,16 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 	}
 	oldRate := routeInfoEntry.rate
 	ALPHA := 0.5
-	nextRate := float64(oldRate) + ALPHA * (1 - float64(totalPrice))
+	nextRate := float64(oldRate) + ALPHA*(1-float64(totalPrice))
 	if nextRate <= 0 {
 		nextRate = 0
 	}
 	routeInfoEntry.rate = nextRate
 	nodeName := os.Getenv("NODENAME")
-	log.Infof("LP Spider: info_type: path_prices,"+
-	"sender: %s, dest: %v, pathID: %d, price: %v, rate: %v, time: %v",
-	nodeName, dest, msg.PathID, totalPrice, nextRate,
-	int32(time.Now().Unix()))
+	log.Errorf("LP Spider: info_type: path_prices,"+
+		"sender: %s, dest: %v, pathID: %d, price: %v, rate: %v, time: %v",
+		nodeName, dest, msg.PathID, totalPrice, nextRate,
+		int32(time.Now().Unix()))
 }
 
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
@@ -492,7 +493,7 @@ func (r *ChannelRouter) Start() error {
 		return nil
 	}
 	// pari: better way for this?
-	r.nodeName =  os.Getenv("NODENAME")
+	r.nodeName = os.Getenv("NODENAME")
 
 	log.Tracef("Channel Router starting")
 
@@ -1883,9 +1884,9 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 		dest := NewVertex(payment.Target)
 
 		// create LPPayment struct that we will add to the queue
-		LPPay := LPPayment {
+		LPPay := LPPayment{
 			payment: payment,
-			result: make(chan LPPaymentResult),
+			result:  make(chan LPPaymentResult),
 		}
 		// Try to access (or create) the corresponding queue.
 		// First, lock the dest-queue map.
@@ -1897,14 +1898,14 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			// but if the channel buffer is full, just return and tell the sender
 			select {
 			case q <- LPPay:
-				log.Infof("LP Spider: info_type: lp_queue," +
-				"time: %d, sender: %v, dest: %v, status: accepted, queue_size: %d",
-				int32(time.Now().Unix()), r.nodeName, dest, len(q))
+				log.Errorf("LP Spider: info_type: lp_queue,"+
+					"time: %d, sender: %v, dest: %v, status: accepted, queue_size: %d",
+					int32(time.Now().Unix()), r.nodeName, dest, len(q))
 				log.Debugf("Payment added to the queue, queue size is %v", len(q))
 			default:
-				log.Infof("LP Spider: info_type: lp_queue," +
-				"time: %d, sender: %v, dest: %v, status: declined, queue_size: %d",
-				int32(time.Now().Unix()), r.nodeName, dest, len(q))
+				log.Errorf("LP Spider: info_type: lp_queue,"+
+					"time: %d, sender: %v, dest: %v, status: declined, queue_size: %d",
+					int32(time.Now().Unix()), r.nodeName, dest, len(q))
 				log.Debugf("Declining sending payment due to full queue")
 				return [32]byte{}, nil, errors.New("Payment can not be queued due to full buffer, and timed out by LP sender")
 			}
@@ -1938,12 +1939,12 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 
 type LPRouteInfo struct {
 	route         *Route
-	lastUpdated   time.Time		// when this info is updated
-	rate          float64		// txn per second
-	ready         *time.Timer	// timer indicating this path is ready
+	lastUpdated   time.Time   // when this info is updated
+	rate          float64     // txn per second
+	ready         *time.Timer // timer indicating this path is ready
 	acceptor      chan LPPayment
-	window        lnwire.MilliSatoshi	// window size
-	inFlight      lnwire.MilliSatoshi	// amount in flight
+	window        lnwire.MilliSatoshi // window size
+	inFlight      lnwire.MilliSatoshi // amount in flight
 	inFlightMutex *sync.Mutex
 	waitTime      float64
 }
@@ -1956,21 +1957,21 @@ type LPRouteInfo struct {
 // passes its LPRouteInfo object through the "notifier" channel to the
 // handleLPPaymentToDest goroutine, expecting that goroutine will supply
 // a payment request to our "acceptor".
-func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, notifier chan LPRouteInfo) *LPRouteInfo{
+func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, notifier chan LPRouteInfo) *LPRouteInfo {
 	pathWindowSize := lnwire.MilliSatoshi(defaultWindowSize)
-	if (!useWindows) {
+	if !useWindows {
 		pathWindowSize = 1000000000000
 	}
 
-	path := LPRouteInfo {
+	path := LPRouteInfo{
 		// we set the path to be ready when we init the path
-		route: route,
-		ready:    time.NewTimer(0),
-		acceptor: make(chan LPPayment),
-		window: pathWindowSize,
-		inFlight: 0,
+		route:         route,
+		ready:         time.NewTimer(0),
+		acceptor:      make(chan LPPayment),
+		window:        pathWindowSize,
+		inFlight:      0,
 		inFlightMutex: &sync.Mutex{},
-		rate: 2,
+		rate:          2,
 	}
 
 	go func() {
@@ -2002,10 +2003,10 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 						preImage, route, err := r.SendToRoute([]*Route{route}, payment.payment)
 
 						// return result through the channel
-						result := LPPaymentResult {
+						result := LPPaymentResult{
 							preImage: preImage,
-							route: route,
-							err: err,
+							route:    route,
+							err:      err,
 						}
 						payment.result <- result
 
@@ -2030,7 +2031,6 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 				} else {
 					path.ready.Reset(time.Duration(path.waitTime) * time.Microsecond)
 				}
-
 
 			}
 		}
@@ -2072,10 +2072,10 @@ func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) *[]*LPRouteInfo {
 				kShortest, err := r.getKShortestPaths(dest, p.payment)
 				if err != nil {
 					log.Errorf("Failed to get K-shortest path")
-					result := LPPaymentResult {
+					result := LPPaymentResult{
 						preImage: [32]byte{},
-						route: nil,
-						err: errors.New("Failed to get K-shortest path for this destination"),
+						route:    nil,
+						err:      errors.New("Failed to get K-shortest path for this destination"),
 					}
 					p.result <- result
 					continue
@@ -2240,15 +2240,15 @@ func (r *ChannelRouter) initiateProbeLP(route *Route, pathID uint32) {
 	pathLength := len(probePath)
 
 	// fill in the fields for the probe message
-	probeMsg := &lnwire.ProbeRouteChannelPrices {
-		Route:                 probePath,
-		HopNum:                0,
+	probeMsg := &lnwire.ProbeRouteChannelPrices{
+		Route:               probePath,
+		HopNum:              0,
 		RouterChannelPrices: make([]lnwire.MilliSatoshi, pathLength),
-		Sender:                lnwire.Vertex(senderNode),
-		ProbeCompleted:        0,
-		CurrentNode:           lnwire.Vertex(senderNode),
-		PathID:                pathID,
-		Error:                 0,
+		Sender:              lnwire.Vertex(senderNode),
+		ProbeCompleted:      0,
+		CurrentNode:         lnwire.Vertex(senderNode),
+		PathID:              pathID,
+		Error:               0,
 	}
 
 	// send the probe to the first hop which will propagate it onwards
@@ -2343,8 +2343,8 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 	paySession *paymentSession) ([32]byte, *Route, error) {
 
 	dest := NewVertex(payment.Target)
-	log.Infof("Spider: info_type: payment_attempted, time: %d, sender: %v, dest: %v",
-				int32(time.Now().Unix()), r.nodeName, dest)
+	log.Errorf("Spider: info_type: payment_attempted, time: %d, sender: %v, dest: %v",
+		int32(time.Now().Unix()), r.nodeName, dest)
 
 	log.Tracef("Dispatching route for lightning payment: %v",
 		newLogClosure(func() string {
@@ -2702,10 +2702,10 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 		}
 
 		// pari: this should only reach if successful.
-		log.Infof("Spider: info_type: payment_success, time: %d, sender: %v, dest: %v",
-					int32(time.Now().Unix()), r.nodeName, dest)
-		log.Infof("Spider: info_type: payment_result" +
-				"result: %v, route: %v, err: %v", preImage, route)
+		log.Errorf("Spider: info_type: payment_success, time: %d, sender: %v, dest: %v",
+			int32(time.Now().Unix()), r.nodeName, dest)
+		log.Errorf("Spider: info_type: payment_result"+
+			"result: %v, route: %v, err: %v", preImage, route)
 		return preImage, route, nil
 	}
 }

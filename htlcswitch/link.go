@@ -490,7 +490,7 @@ func (l *channelLink) periodicUpdatePriceProbe() {
 			Adiff_Remote: aVal,
 			Sdiff_Remote: sVal,
 		}
-		log.Infof("Spider: info_type: updateLocalPrice, time: %d, node: %s,"+
+		log.Errorf("Spider: info_type: updateLocalPrice, time: %d, node: %s,"+
 			"peer: %s, xlocal: %d, nlocal: %d,"+
 			"ilocal: %d, queuelen: %d, aVal: %d, sVal: %d",
 			int32(time.Now().Unix()), l.nodeName, l.peerName, l.x_local, l.n_local,
@@ -522,7 +522,7 @@ func (l *channelLink) periodicLogging() {
 		locBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.LocalBalance)
 		remBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.RemoteBalance)
 		bandwidth := fmt.Sprintf("%v", l.Bandwidth())
-		log.Infof("Spider: info_type: periodicStats,"+
+		log.Errorf("Spider: info_type: periodicStats,"+
 			"time: %v, i: %d, node: %s, peer: %s, chanID: %s,"+
 			"qlen: %s, totalAmt: %s, sent: %s, rcvd: %s, locBal: %s,"+
 			"remBal: %s, bandwidth: %s, capacity: %s",
@@ -1917,7 +1917,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			}
 			l.lambda = l.lambda + float64(ETA)*float64(T_UPDATE)*(ix*float64(wx)+iy*float64(wy)-float64(l.capacity)+(2.00*BETA*minq))
 
-			log.Infof("LP Spider: info_type: updatePriceProbe,"+
+			log.Errorf("LP Spider: info_type: updatePriceProbe,"+
 				"node: %s, peer: %s, time: %d, ix: %v, iy: %v,"+
 				"wx: %v, wy: %v, qx: %v, qy: %v, aDiffRemote: %v,"+
 				"sDiffRemote: %v, aDiff: %v, sDiff: %v, mu_local: %v,"+
@@ -2382,7 +2382,7 @@ func (l *channelLink) LP_Price() lnwire.MilliSatoshi {
 	// FIXME: need to verify the types. does this work??
 	// equation from the specs: (2 * \lambda) + \mu_local  - \mu_remote
 	price := (2 * l.lambda) + l.mu_local - l.mu_remote
-	log.Infof("LP Spider: info_type: LP_Price, time: %d, nodeName: %v, price: %v",
+	log.Errorf("LP Spider: info_type: LP_Price, time: %d, nodeName: %v, price: %v",
 		int32(time.Now().Unix()), l.nodeName, price)
 	return lnwire.MilliSatoshi(price)
 }
