@@ -20,12 +20,13 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/ticker"
 )
+
 // spider imports
 import (
 	"gopkg.in/zabawaba99/firego.v1"
-  "os"
-  "strconv"
 	"math"
+	"os"
+	"strconv"
 )
 
 func init() {
@@ -241,34 +242,34 @@ type ChannelLinkConfig struct {
 // switch. Additionally, the link encapsulate logic of commitment protocol
 // message ordering and updates.
 type channelLink struct {
-	downstreamPathStats []string
+	downstreamPathStats     []string
 	downstreamPathStatsLock sync.Mutex
-	upstreamPathStats []string
-	upstreamPathStatsLock sync.Mutex
+	upstreamPathStats       []string
+	upstreamPathStatsLock   sync.Mutex
 
-  // long-lived firebase connections
+	// long-lived firebase connections
 	successFirebaseConn *firego.Firebase
-  //successFirebaseConnMutex sync.Mutex
+	//successFirebaseConnMutex sync.Mutex
 	successChan chan string
 
-  //downstreamFirebaseConn *firego.Firebase
-  //downstreamFirebaseConnMutex sync.Mutex
-  //upstreamFirebaseConn *firego.Firebase
-  //upstreamFirebaseConnMutex sync.Mutex
+	//downstreamFirebaseConn *firego.Firebase
+	//downstreamFirebaseConnMutex sync.Mutex
+	//upstreamFirebaseConn *firego.Firebase
+	//upstreamFirebaseConnMutex sync.Mutex
 
 	// lp routing
-	nodeName string // spider specific
-	peerName string // spider-specific
-	x_local uint64
-	mu_local float64
+	nodeName  string // spider specific
+	peerName  string // spider-specific
+	x_local   uint64
+	mu_local  float64
 	mu_remote float64
-	lambda float64
+	lambda    float64
 
 	// FIXME: should these be in terms of millisatoshis?
-	N uint64		// value of transactions since the last UpdatePriceProbe
+	N        uint64 // value of transactions since the last UpdatePriceProbe
 	capacity uint64
-	i_local uint64
-	n_local uint64
+	i_local  uint64
+	n_local  uint64
 	//n_remote uint64
 	//q_remote uint64
 	//w_local uint64
@@ -393,41 +394,41 @@ func NewChannelLink(cfg ChannelLinkConfig,
 }
 
 //func (l *channelLink) logAggregateStatsFb()  {
-  //debug_print("in link's logAggregateStatsFb\n")
-  //// FIXME: don't need to make new arrays here
-	//switchKey := l.cfg.Switch.getSwitchKey()
-	//chanID := fmt.Sprintf("%v", l.ShortChanID())
-  //fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
-                              //switchKey + "/"+ chanID + "/upstream/", nil)
-  //fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
-                              //switchKey + "/"+ chanID + "/downstream/", nil)
+//debug_print("in link's logAggregateStatsFb\n")
+//// FIXME: don't need to make new arrays here
+//switchKey := l.cfg.Switch.getSwitchKey()
+//chanID := fmt.Sprintf("%v", l.ShortChanID())
+//fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
+//switchKey + "/"+ chanID + "/upstream/", nil)
+//fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
+//switchKey + "/"+ chanID + "/downstream/", nil)
 
-  //// statistics for generating paths
-  //if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
-    //debug_print("error when logging upstream paths to firebase")
-  //}
-  //if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
-    //debug_print("error when logging upstream paths to firebase")
-  //}
+//// statistics for generating paths
+//if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
+//debug_print("error when logging upstream paths to firebase")
+//}
+//if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
+//debug_print("error when logging upstream paths to firebase")
+//}
 //}
 
 func (l *channelLink) updateAggregateStatsFirebase() {
-	vals := make(map[string] string)
+	vals := make(map[string]string)
 	debug_print("updateAggregateStatsFirebase!\n")
 	fmt.Println("updateAggregateStatsFirebase!")
 	for {
 		htlcHash, valid := <-l.successChan
-		if (!valid) {
+		if !valid {
 			fmt.Println("breaking out of updateAggregateStats loop!")
 			break
 		}
 		vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-		if (len(vals) >= 10) {
+		if len(vals) >= 10 {
 			fmt.Println("logging to firebase from link.go")
 			if _, err := l.successFirebaseConn.Push(vals); err != nil {
 				debug_print("error when logging to firebase")
 			}
-			vals = make(map[string] string)
+			vals = make(map[string]string)
 		}
 	}
 }
@@ -461,7 +462,7 @@ func (l *channelLink) getArrivalServiceTimes() (time.Duration, time.Duration) {
 	return aVal, sVal
 }
 
-func (l *channelLink) periodicUpdatePriceProbe()  {
+func (l *channelLink) periodicUpdatePriceProbe() {
 	//time.Sleep(time.Duration(10) * time.Second)
 	//log.Infof("LP: periodicUpdatePriceProbe started")
 	for {
@@ -477,23 +478,23 @@ func (l *channelLink) periodicUpdatePriceProbe()  {
 		}
 
 		debug_print(fmt.Sprintf("periodicUpdate: x: %d, i: %d, q: %d, n: %d", l.x_local,
-								l.i_local, queue_len, l.n_local))
+			l.i_local, queue_len, l.n_local))
 
 		aVal, sVal := l.getArrivalServiceTimes()
-		msg := &lnwire.UpdatePriceProbe {
-			ChanID: l.ChanID(),
-			X_Remote : l.x_local,
-			I_Remote: l.i_local,
-			Q_Remote: queue_len,
-			N_Remote: l.n_local,
+		msg := &lnwire.UpdatePriceProbe{
+			ChanID:       l.ChanID(),
+			X_Remote:     l.x_local,
+			I_Remote:     l.i_local,
+			Q_Remote:     queue_len,
+			N_Remote:     l.n_local,
 			Adiff_Remote: aVal,
 			Sdiff_Remote: sVal,
 		}
-		log.Infof("Spider: info_type: updateLocalPrice, time: %d, node: %s," +
-		"peer: %s, xlocal: %d, nlocal: %d," +
-		"ilocal: %d, queuelen: %d, aVal: %d, sVal: %d",
-		int32(time.Now().Unix()), l.nodeName, l.peerName, l.x_local, l.n_local,
-		l.i_local, queue_len, aVal, sVal)
+		log.Infof("Spider: info_type: updateLocalPrice, time: %d, node: %s,"+
+			"peer: %s, xlocal: %d, nlocal: %d,"+
+			"ilocal: %d, queuelen: %d, aVal: %d, sVal: %d",
+			int32(time.Now().Unix()), l.nodeName, l.peerName, l.x_local, l.n_local,
+			l.i_local, queue_len, aVal, sVal)
 
 		if err := l.cfg.Peer.SendMessage(true, msg); err != nil {
 			log.Infof("LP: periodicUpdatePriceProbe failed!\n")
@@ -505,7 +506,7 @@ func (l *channelLink) periodicUpdatePriceProbe()  {
 	}
 }
 
-func (l *channelLink) periodicLogging()  {
+func (l *channelLink) periodicLogging() {
 	//switchKey := l.cfg.Switch.getSwitchKey()
 	chanID := fmt.Sprintf("%v", l.ShortChanID())
 	i := 0
@@ -521,12 +522,12 @@ func (l *channelLink) periodicLogging()  {
 		locBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.LocalBalance)
 		remBal := fmt.Sprintf("%v", snapshot.ChannelCommitment.RemoteBalance)
 		bandwidth := fmt.Sprintf("%v", l.Bandwidth())
-		log.Infof("Spider: info_type: periodicStats," +
-		"time: %v, i: %d, node: %s, peer: %s, chanID: %s," +
-		"qlen: %s, totalAmt: %s, sent: %s, rcvd: %s, locBal: %s," +
-		"remBal: %s, bandwidth: %s, capacity: %s",
-		int32(time.Now().Unix()), i, l.nodeName, l.peerName, chanID, qlen, totalAmt, sent, rcvd,
-		locBal, remBal, bandwidth, capacity)
+		log.Infof("Spider: info_type: periodicStats,"+
+			"time: %v, i: %d, node: %s, peer: %s, chanID: %s,"+
+			"qlen: %s, totalAmt: %s, sent: %s, rcvd: %s, locBal: %s,"+
+			"remBal: %s, bandwidth: %s, capacity: %s",
+			int32(time.Now().Unix()), i, l.nodeName, l.peerName, chanID, qlen, totalAmt, sent, rcvd,
+			locBal, remBal, bandwidth, capacity)
 
 		i += 1
 		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
@@ -537,12 +538,12 @@ func (l *channelLink) periodicLogging()  {
 // Queue is lower than the available balance, and then wake up the queue.
 func (l *channelLink) startQueueWatcher() {
 	// infinite loop.
-	if (TIMEOUT) {
+	if TIMEOUT {
 		debug_print("TIMEOUT\n")
 	}
 	SPIDER_QUEUE_UPDATE_TIME := os.Getenv("SPIDER_QUEUE_UPDATE_TIME")
 	SLEEP_DURATION := 100
-	if (SPIDER_QUEUE_UPDATE_TIME != "") {
+	if SPIDER_QUEUE_UPDATE_TIME != "" {
 		// update sleep duration
 		TMP, _ := strconv.Atoi(SPIDER_QUEUE_UPDATE_TIME)
 		SLEEP_DURATION = TMP
@@ -555,21 +556,21 @@ func (l *channelLink) startQueueWatcher() {
 		//debug_print(fmt.Sprintf("queue watcher interval = %d\n", interval))
 		channelAmt := l.channel.AvailableBalance()
 		minOverflowAmt := l.overflowQueue.MinHtlcAmount()
-		if (TIMEOUT) {
-				//now := time.Now()
-				//closestDeadline := l.overflowQueue.ClosestDeadline()
-				//if closestDeadline.Before(now) {
-					//// we should fail this, so signal free slot -> which will put it back
-					//// to be processed in the switch
-					//fmt.Println("going to signal free slot because deadline exceeded")
-					////fmt.Printf("%v",  closestDeadline)
-					//l.overflowQueue.SignalFreeSlot()
-				//}
+		if TIMEOUT {
+			//now := time.Now()
+			//closestDeadline := l.overflowQueue.ClosestDeadline()
+			//if closestDeadline.Before(now) {
+			//// we should fail this, so signal free slot -> which will put it back
+			//// to be processed in the switch
+			//fmt.Println("going to signal free slot because deadline exceeded")
+			////fmt.Printf("%v",  closestDeadline)
+			//l.overflowQueue.SignalFreeSlot()
+			//}
 
 			numTimedOut := 0
 			for {
 				fmt.Println("overflowQueue time out loop")
-				if (l.overflowQueue.Length() == 0) {
+				if l.overflowQueue.Length() == 0 {
 					fmt.Println("breaking out of loop because len 0")
 					break
 				}
@@ -587,11 +588,11 @@ func (l *channelLink) startQueueWatcher() {
 				numTimedOut += 1
 			}
 			//if (numTimedOut > 0) {
-				//debug_print(fmt.Sprintf("interval: %d, num TIMEDOUT: %d\n", interval,
-									//numTimedOut))
+			//debug_print(fmt.Sprintf("interval: %d, num TIMEDOUT: %d\n", interval,
+			//numTimedOut))
 			//} else {
-				//debug_print(fmt.Sprintf("interval: %d, num timed out: %d\n", interval,
-									//numTimedOut))
+			//debug_print(fmt.Sprintf("interval: %d, num timed out: %d\n", interval,
+			//numTimedOut))
 			//}
 		}
 		// CHECK: is it enough to check that number of inflight htlc's are below
@@ -600,8 +601,8 @@ func (l *channelLink) startQueueWatcher() {
 		// popping the HTLC off the queue, all those relevant checks will be
 		// performed again, and if anything fails, the HTLC will be added back to
 		// the queue.
-		if (channelAmt > minOverflowAmt && minOverflowAmt != 0) {
-				debug_print(fmt.Sprintf("in startQueueWatcher, chanID: %s, channelAmt: %d, minOverflowAmt: %d\n", l.channel.ShortChanID(), channelAmt, minOverflowAmt));
+		if channelAmt > minOverflowAmt && minOverflowAmt != 0 {
+			debug_print(fmt.Sprintf("in startQueueWatcher, chanID: %s, channelAmt: %d, minOverflowAmt: %d\n", l.channel.ShortChanID(), channelAmt, minOverflowAmt))
 			// if no items in the queue, will not have any effect.
 			debug_print(fmt.Sprintf("signaling to the overflow queue, for channel\n: %s\n", l.shortChanID))
 			debug_print(fmt.Sprintf("current queue len at this node is: %d\n", l.overflowQueue.queueLen))
@@ -609,7 +610,7 @@ func (l *channelLink) startQueueWatcher() {
 		} else {
 			// fmt.Println("nothing dequeued!!")
 		}
-		time.Sleep(time.Duration(SLEEP_DURATION)*time.Millisecond)
+		time.Sleep(time.Duration(SLEEP_DURATION) * time.Millisecond)
 		interval += 1
 	}
 }
@@ -635,13 +636,13 @@ func (l *channelLink) Start() error {
 	l.peerName = fmt.Sprintf("%x", l.cfg.Peer.PubKey())
 	log.Infof("l.peerName: %s", l.peerName)
 
-	if (SPIDER_FLAG) {
+	if SPIDER_FLAG {
 		go l.startQueueWatcher()
 	}
 
 	go l.periodicLogging()
 
-	if (LP_ROUTING) {
+	if LP_ROUTING {
 		go l.periodicUpdatePriceProbe()
 		// initialize all the relevant variables
 		l.x_local = 0
@@ -1359,7 +1360,7 @@ out:
 			break out
 		}
 	}
-  debug_print("link: break out\n")
+	debug_print("link: break out\n")
 }
 
 // randomFeeUpdateTimeout returns a random timeout between the bounds defined
@@ -1379,12 +1380,10 @@ func (l *channelLink) randomFeeUpdateTimeout() time.Duration {
 // TODO(roasbeef): add sync ntfn to ensure switch always has consistent view?
 func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 	debug_print(fmt.Sprintf("handleDownstreamPkt\n"))
-	fmt.Println("handleDownstreamPkt")
 	var isSettle bool
 	switch htlc := pkt.htlc.(type) {
 	case *lnwire.UpdateAddHTLC:
 		debug_print(fmt.Sprintf("lnwire updateAddHTLC\n"))
-		fmt.Println("lnwire updateAddHTLC")
 		// If hodl.AddOutgoing mode is active, we exit early to simulate
 		// arbitrary delays between the switch adding an ADD to the
 		// mailbox, and the HTLC being added to the commitment state.
@@ -1500,7 +1499,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 				return
 			case lnwallet.ErrBelowChanReserve:
 				// CHECK: if the flag is off, then will just fall through to the default case.
-				if (SPIDER_FLAG) {
+				if SPIDER_FLAG {
 					debug_print(fmt.Sprintf("Downstream htlc add update with "+
 						"payment hash(%x) have been added to "+
 						"reprocessing queue, batch: %v because there wasn't enough balance on the channel\n",
@@ -1509,7 +1508,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 					l.overflowQueue.AddPkt(pkt)
 					return
 				}
-        fallthrough
+				fallthrough
 
 			// The HTLC was unable to be added to the state
 			// machine, as a result, we'll signal the switch to
@@ -1586,23 +1585,23 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			}
 		}
 
-		if (LOG_FIREBASE) {
-      //go func() {
-        // val := fmt.Sprintf("%x", htlc.PaymentHash[:])
-        //l.downstreamFirebaseConnMutex.Lock()
-        //if _, err := l.downstreamFirebaseConn.Push(val); err != nil {
-          //debug_print("error when logging to firebase")
-        //}
-        //l.downstreamFirebaseConnMutex.Unlock()
-      //}()
+		if LOG_FIREBASE {
+			//go func() {
+			// val := fmt.Sprintf("%x", htlc.PaymentHash[:])
+			//l.downstreamFirebaseConnMutex.Lock()
+			//if _, err := l.downstreamFirebaseConn.Push(val); err != nil {
+			//debug_print("error when logging to firebase")
+			//}
+			//l.downstreamFirebaseConnMutex.Unlock()
+			//}()
 			//l.downstreamPathStatsLock.Lock()
 			//l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
 			//l.downstreamPathStatsLock.Unlock()
-      // Method 3:
-      //val := fmt.Sprintf("%x", htlc.PaymentHash[:])
-      //l.downstreamFirebaseConnMutex.Lock()
-      //debug_print(fmt.Sprintf("downstream val: %s\n", val))
-      //l.downstreamFirebaseConnMutex.Unlock()
+			// Method 3:
+			//val := fmt.Sprintf("%x", htlc.PaymentHash[:])
+			//l.downstreamFirebaseConnMutex.Lock()
+			//debug_print(fmt.Sprintf("downstream val: %s\n", val))
+			//l.downstreamFirebaseConnMutex.Unlock()
 		}
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1749,7 +1748,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		isSettle = true
 		// if a transaction we sent previously, failed somewhere, then we can also
 		// treat that as one fewer inflight transaction
-		if (l.i_local > 0) {
+		if l.i_local > 0 {
 			l.i_local -= 1
 		}
 	}
@@ -1848,23 +1847,23 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			return
 		}
 
-		if (LOG_FIREBASE) {
-      //go func() {
-        //val := fmt.Sprintf("%x", msg.PaymentHash[:])
-        //l.upstreamFirebaseConnMutex.Lock()
-        //if _, err := l.upstreamFirebaseConn.Push(val); err != nil {
-          //debug_print("error when logging to firebase")
-        //}
-        //l.upstreamFirebaseConnMutex.Unlock()
-      //}()
+		if LOG_FIREBASE {
+			//go func() {
+			//val := fmt.Sprintf("%x", msg.PaymentHash[:])
+			//l.upstreamFirebaseConnMutex.Lock()
+			//if _, err := l.upstreamFirebaseConn.Push(val); err != nil {
+			//debug_print("error when logging to firebase")
+			//}
+			//l.upstreamFirebaseConnMutex.Unlock()
+			//}()
 			// method 2:
 			//l.upstreamPathStatsLock.Lock()
 			//l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
 			//l.upstreamPathStatsLock.Unlock()
-      //val := fmt.Sprintf("%x", msg.PaymentHash[:])
-      //l.upstreamFirebaseConnMutex.Lock()
-      //debug_print(fmt.Sprintf("upstream val: %s\n", val))
-      //l.upstreamFirebaseConnMutex.Unlock()
+			//val := fmt.Sprintf("%x", msg.PaymentHash[:])
+			//l.upstreamFirebaseConnMutex.Lock()
+			//debug_print(fmt.Sprintf("upstream val: %s\n", val))
+			//l.upstreamFirebaseConnMutex.Unlock()
 		}
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
@@ -1872,20 +1871,20 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		log.Infof(fmt.Sprintf("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v\n", msg.PaymentHash[:], index))
 		// FIXME pari: is this the best place to update this?
-		if (LP_ROUTING) {
+		if LP_ROUTING {
 			//log.Infof("updating N, old value: %d\n", l.N)
 			//l.N += uint64(msg.Amount)
 			//log.Infof("new N value: %d\n", l.N)
 			l.n_local += 1
 		}
 	case *lnwire.UpdatePriceProbe:
-		if (LP_ROUTING) {
+		if LP_ROUTING {
 			// probe sent by other side with their values. Will calculate / update
 			// local lambda / and mu values based on this.
 			n_remote := msg.N_Remote
 			q_remote := msg.Q_Remote
 
-			l.mu_local = l.mu_local + float64(KAPPA) * (float64(l.n_local) + (float64(l.overflowQueue.Length()) * T_UPDATE / QUEUE_DRAIN_TIME) - float64(n_remote) - (float64(q_remote) * T_UPDATE / QUEUE_DRAIN_TIME))
+			l.mu_local = l.mu_local + float64(KAPPA)*(float64(l.n_local)+(float64(l.overflowQueue.Length())*T_UPDATE/QUEUE_DRAIN_TIME)-float64(n_remote)-(float64(q_remote)*T_UPDATE/QUEUE_DRAIN_TIME))
 
 			if len(l.arrival_times) == 0 || len(l.service_times) == 0 {
 				return
@@ -1898,11 +1897,11 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			wx := (float64(sDiff) / float64(time.Second)) / float64(aDiff) / float64(time.Second)
 			wy := (float64(msg.Sdiff_Remote) / float64(time.Second)) / (float64(msg.Adiff_Remote) / float64(time.Second))
 
-			if (math.IsNaN(wx)) {
+			if math.IsNaN(wx) {
 				log.Infof("wx is NaN. Setting = 0")
 				wx = 0.0
 			}
-			if (math.IsNaN(wy)) {
+			if math.IsNaN(wy) {
 				log.Infof("wy is NaN. Setting = 0")
 				wy = 0.0
 			}
@@ -1916,16 +1915,16 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			if qy < minq {
 				minq = qy
 			}
-			l.lambda = l.lambda + float64(ETA)*float64(T_UPDATE) * (ix*float64(wx) + iy*float64(wy) - float64(l.capacity) +(2.00*BETA*minq))
+			l.lambda = l.lambda + float64(ETA)*float64(T_UPDATE)*(ix*float64(wx)+iy*float64(wy)-float64(l.capacity)+(2.00*BETA*minq))
 
 			log.Infof("LP Spider: info_type: updatePriceProbe,"+
-						"node: %s, peer: %s, time: %d, ix: %v, iy: %v,"+
-						"wx: %v, wy: %v, qx: %v, qy: %v, aDiffRemote: %v,"+
-						"sDiffRemote: %v, aDiff: %v, sDiff: %v, mu_local: %v,"+
-						"lambda: %v, n_local: %v, n_remote: %v, q_remote: %v",
-						l.nodeName, l.peerName, int32(time.Now().Unix()), ix,
-						iy, wx, wy, qx, qy, l.mu_local, l.lambda, l.n_local,
-						n_remote, q_remote)
+				"node: %s, peer: %s, time: %d, ix: %v, iy: %v,"+
+				"wx: %v, wy: %v, qx: %v, qy: %v, aDiffRemote: %v,"+
+				"sDiffRemote: %v, aDiff: %v, sDiff: %v, mu_local: %v,"+
+				"lambda: %v, n_local: %v, n_remote: %v, q_remote: %v",
+				l.nodeName, l.peerName, int32(time.Now().Unix()), ix,
+				iy, wx, wy, qx, qy, l.mu_local, l.lambda, l.n_local,
+				n_remote, q_remote)
 		}
 
 	case *lnwire.UpdateFulfillHTLC:
@@ -2384,7 +2383,7 @@ func (l *channelLink) LP_Price() lnwire.MilliSatoshi {
 	// equation from the specs: (2 * \lambda) + \mu_local  - \mu_remote
 	price := (2 * l.lambda) + l.mu_local - l.mu_remote
 	log.Infof("LP Spider: info_type: LP_Price, time: %d, nodeName: %v, price: %v",
-			int32(time.Now().Unix()), l.nodeName, price)
+		int32(time.Now().Unix()), l.nodeName, price)
 	return lnwire.MilliSatoshi(price)
 }
 
@@ -2438,7 +2437,7 @@ func (l *channelLink) HtlcSatifiesPolicy(payHash [32]byte,
 	incomingHtlcAmt, amtToForward lnwire.MilliSatoshi,
 	incomingTimeout, outgoingTimeout uint32,
 	heightNow uint32) lnwire.FailureMessage {
-	debug_print("in HtlcSatisfiesPolicy");
+	debug_print("in HtlcSatisfiesPolicy")
 	l.RLock()
 	policy := l.cfg.FwrdingPolicy
 	l.RUnlock()
@@ -3028,35 +3027,35 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				PaymentPreimage: preimage,
 			})
 			needUpdate = true
-      if (LOG_FIREBASE) {
-        // recording successful htlc payments
-        // Method 4: send it over channel to separate goroutine
+			if LOG_FIREBASE {
+				// recording successful htlc payments
+				// Method 4: send it over channel to separate goroutine
 				l.successChan <- fmt.Sprintf("%x", pd.RHash)
 
 				/// older method:
-        // we do this in a new goroutine so this doesn't hold up the rest of
-        // the lnd stuff from functioning
-        //go func() {
-          //vals := make(map[string] string)
-          //vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
-                                        //int32(time.Now().Unix()))
-          //l.successFirebaseConnMutex.Lock()
-          //if _, err := l.successFirebaseConn.Push(vals); err != nil {
-            //debug_print("error when logging to firebase")
-          //}
-          //l.successFirebaseConnMutex.Unlock()
-        //}()
+				// we do this in a new goroutine so this doesn't hold up the rest of
+				// the lnd stuff from functioning
+				//go func() {
+				//vals := make(map[string] string)
+				//vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
+				//int32(time.Now().Unix()))
+				//l.successFirebaseConnMutex.Lock()
+				//if _, err := l.successFirebaseConn.Push(vals); err != nil {
+				//debug_print("error when logging to firebase")
+				//}
+				//l.successFirebaseConnMutex.Unlock()
+				//}()
 
-        // Method 3:
-        //vals := make(map[string] string)
-        //vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
-                                      //int32(time.Now().Unix()))
-        //l.successFirebaseConnMutex.Lock()
-        //debug_print(fmt.Sprintf("%v", vals))
-        //l.successFirebaseConnMutex.Unlock()
-      }
+				// Method 3:
+				//vals := make(map[string] string)
+				//vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
+				//int32(time.Now().Unix()))
+				//l.successFirebaseConnMutex.Lock()
+				//debug_print(fmt.Sprintf("%v", vals))
+				//l.successFirebaseConnMutex.Unlock()
+			}
 
-      debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
+			debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
 
 		// There are additional channels left within this route. So
 		// we'll simply do some forwarding package book-keeping.

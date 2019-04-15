@@ -2,11 +2,11 @@ package htlcswitch
 
 import (
 	"container/heap"
+	"fmt"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"sync"
 	"sync/atomic"
 	"time"
-	"fmt"
-	"github.com/lightningnetwork/lnd/lnwire"
 )
 
 // FIXME: description needs to be updated with SPIDER's queue behaviour.
@@ -69,7 +69,7 @@ func newPacketQueue(maxFreeSlots int, maxQueueLen int32) *packetQueue {
 		quit:         make(chan struct{}),
 		maxQueueLen:  maxQueueLen,
 		// initialize with large value
-		minHtlcAmt:   0,
+		minHtlcAmt: 0,
 	}
 	p.queueCond = sync.NewCond(&p.queueMtx)
 
@@ -164,8 +164,8 @@ func (p *packetQueue) packetCoordinator() {
 
 				for i := 0; i < int(p.Length()); i++ {
 					curPkt := p.queue[i].packet
-					if (int64(curPkt.amount) < p.minHtlcAmt) {
-						p.minHtlcAmt = int64(curPkt.amount);
+					if int64(curPkt.amount) < p.minHtlcAmt {
+						p.minHtlcAmt = int64(curPkt.amount)
 					}
 				}
 				p.queueCond.L.Unlock()
@@ -196,7 +196,7 @@ func (p *packetQueue) AddPkt(pkt *htlcPacket) {
 		atomic.AddInt32(&p.queueLen, 1)
 		atomic.AddInt64(&p.totalHtlcAmt, int64(pkt.amount))
 		// does this update the minimum?
-		if (int64(pkt.amount) < p.minHtlcAmt || p.minHtlcAmt == 0) {
+		if int64(pkt.amount) < p.minHtlcAmt || p.minHtlcAmt == 0 {
 			p.minHtlcAmt = int64(pkt.amount)
 			debug_print("min htlc amount updated to")
 		}
@@ -221,7 +221,6 @@ func (p *packetQueue) SignalFreeSlot() {
 	// Otherwise, it's possible that we attempt to overfill the free slots
 	// semaphore and block indefinitely below.
 	//debug_print(fmt.Sprintf("queue len is %d\n", p.queueLen))
-	fmt.Println(fmt.Sprintf("signalFreeSlot queue len is %d", p.queueLen))
 	if atomic.LoadInt32(&p.queueLen) == 0 {
 		return
 	}
@@ -236,13 +235,13 @@ func (p *packetQueue) SignalFreeSlot() {
 }
 
 func (p *packetQueue) ClosestDeadline() time.Time {
-		defer p.queueCond.L.Unlock()
-		p.queueCond.L.Lock()
-		if atomic.LoadInt32(&p.queueLen) == 0 {
-			return time.Now()
-		}
-		priority := p.queue[0].priority
-		return priority
+	defer p.queueCond.L.Unlock()
+	p.queueCond.L.Lock()
+	if atomic.LoadInt32(&p.queueLen) == 0 {
+		return time.Now()
+	}
+	priority := p.queue[0].priority
+	return priority
 }
 
 // Length returns the number of pending htlc packets present within the over
