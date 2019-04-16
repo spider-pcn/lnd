@@ -994,6 +994,8 @@ func findPath(tx *bolt.Tx, graph *channeldb.ChannelGraph,
 		partialPath := heap.Pop(&nodeHeap).(nodeWithDist)
 		bestNode := partialPath.node
 
+		fmt.Println("considering node %v next", bestNode.PubKeyBytes[:])
+
 		// If we've reached our source (or we don't have any incoming
 		// edges), then we're done here and can exit the graph
 		// traversal early.
