@@ -2421,7 +2421,6 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			// are expiring.
 		}
 
-		fmt.Println("calling request route on %x", payment.PaymentHash)
 		route, err := paySession.RequestRoute(
 			payment, uint32(currentHeight), finalCLTVDelta,
 		)
@@ -2746,7 +2745,6 @@ func pruneEdgeFailure(paySession *paymentSession, route *Route,
 	// _outgoing_ channel the source of the error was meant to pass the
 	// HTLC along to.
 	badChan, ok := route.nextHopChannel(errSource)
-	fmt.Println("beg of prune channel view %v", paySession.mc.failedEdges)
 	if !ok {
 		// If we weren't able to find the hop *after* this node, then
 		// we'll attempt to disable the previous channel.
@@ -2763,7 +2761,6 @@ func pruneEdgeFailure(paySession *paymentSession, route *Route,
 
 	// If the channel was found, then we'll inform mission control of this
 	// failure so future attempts avoid this link temporarily.
-	fmt.Println("pruning payment channel %v", badChan.ChannelID)
 	paySession.ReportChannelFailure(badChan.ChannelID)
 }
 
