@@ -1494,11 +1494,11 @@ func (c *OpenChannel) AdvanceCommitChainTail(fwdPkg *FwdPkg) error {
 		// TODO(roasbeef): could make the deltas relative, would save
 		// space, but then tradeoff for more disk-seeks to recover the
 		// full state.
-		logKey := revocationLogBucket
+		/*logKey := revocationLogBucket
 		logBucket, err := chanBucket.CreateBucketIfNotExists(logKey)
 		if err != nil {
 			return err
-		}
+		}*/
 
 		// Before we append this revoked state to the revocation log,
 		// we'll swap out what's currently the tail of the commit tip,
@@ -1521,10 +1521,10 @@ func (c *OpenChannel) AdvanceCommitChainTail(fwdPkg *FwdPkg) error {
 		// revoked (prior) state to the revocation log.
 		//
 		// TODO(roasbeef): store less
-		err = appendChannelLogEntry(logBucket, &c.RemoteCommitment)
+		/*err = appendChannelLogEntry(logBucket, &c.RemoteCommitment)
 		if err != nil {
 			return err
-		}
+		}*/
 
 		// Lastly, we write the forwarding package to disk so that we
 		// can properly recover from failures and reforward HTLCs that
