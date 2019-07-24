@@ -23,7 +23,6 @@ import (
 
 // spider imports
 import (
-	"gopkg.in/zabawaba99/firego.v1"
 	"math"
 	"os"
 	"strconv"
@@ -247,16 +246,6 @@ type channelLink struct {
 	upstreamPathStats       []string
 	upstreamPathStatsLock   sync.Mutex
 
-	// long-lived firebase connections
-	successFirebaseConn *firego.Firebase
-	//successFirebaseConnMutex sync.Mutex
-	successChan chan string
-
-	//downstreamFirebaseConn *firego.Firebase
-	//downstreamFirebaseConnMutex sync.Mutex
-	//upstreamFirebaseConn *firego.Firebase
-	//upstreamFirebaseConnMutex sync.Mutex
-
 	// lp routing
 	nodeName  string // spider specific
 	peerName  string // spider-specific
@@ -265,17 +254,10 @@ type channelLink struct {
 	mu_remote float64
 	lambda    float64
 
-	// FIXME: should these be in terms of millisatoshis?
 	N        uint64 // value of transactions since the last UpdatePriceProbe
 	capacity uint64
 	i_local  uint64
 	n_local  uint64
-	//n_remote uint64
-	//q_remote uint64
-	//w_local uint64
-	//w_remote uint64
-	//arrival_times []uint64
-	//service_times []uint64
 	arrival_times []time.Time
 	service_times []time.Time
 
@@ -390,46 +372,6 @@ func NewChannelLink(cfg ChannelLinkConfig,
 		overflowQueue:  newPacketQueue(maxHTLC/2, int32(maxHTLC*SPIDER_QUEUE_LENGTH_SCALE)),
 		htlcUpdates:    make(chan []channeldb.HTLC),
 		quit:           make(chan struct{}),
-	}
-}
-
-//func (l *channelLink) logAggregateStatsFb()  {
-//debug_print("in link's logAggregateStatsFb\n")
-//// FIXME: don't need to make new arrays here
-//switchKey := l.cfg.Switch.getSwitchKey()
-//chanID := fmt.Sprintf("%v", l.ShortChanID())
-//fbUpstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
-//switchKey + "/"+ chanID + "/upstream/", nil)
-//fbDownstream := firego.New(FIREBASE_URL + EXP_NAME + "/paths/" +
-//switchKey + "/"+ chanID + "/downstream/", nil)
-
-//// statistics for generating paths
-//if _, err := fbUpstream.Push(l.upstreamPathStats); err != nil {
-//debug_print("error when logging upstream paths to firebase")
-//}
-//if _, err := fbDownstream.Push(l.downstreamPathStats); err != nil {
-//debug_print("error when logging upstream paths to firebase")
-//}
-//}
-
-func (l *channelLink) updateAggregateStatsFirebase() {
-	vals := make(map[string]string)
-	debug_print("updateAggregateStatsFirebase!\n")
-	fmt.Println("updateAggregateStatsFirebase!")
-	for {
-		htlcHash, valid := <-l.successChan
-		if !valid {
-			fmt.Println("breaking out of updateAggregateStats loop!")
-			break
-		}
-		vals[htlcHash] = fmt.Sprintf("%d", int32(time.Now().Unix()))
-		if len(vals) >= 10 {
-			fmt.Println("logging to firebase from link.go")
-			if _, err := l.successFirebaseConn.Push(vals); err != nil {
-				debug_print("error when logging to firebase")
-			}
-			vals = make(map[string]string)
-		}
 	}
 }
 
@@ -1398,7 +1340,6 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			now := time.Now()
 			deadline := htlc.Crafted.Add(htlc.Timeout)
 			if deadline.Before(now) {
-				fmt.Println("going to send back failure message")
 				debug_print("going to send back failure message\n")
 				// send failure message back. Other details don't matter anymore.
 				var (
@@ -1478,7 +1419,6 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		openCircuitRef := pkt.inKey()
 		index, err := l.channel.AddHTLC(htlc, &openCircuitRef)
 		if err != nil {
-			//debug_print(fmt.Sprintf("error in handleDownstream! \n"))
 			switch err {
 
 			// The channels spare bandwidth is fully allocated, so
@@ -1583,25 +1523,6 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 
 				return
 			}
-		}
-
-		if LOG_FIREBASE {
-			//go func() {
-			// val := fmt.Sprintf("%x", htlc.PaymentHash[:])
-			//l.downstreamFirebaseConnMutex.Lock()
-			//if _, err := l.downstreamFirebaseConn.Push(val); err != nil {
-			//debug_print("error when logging to firebase")
-			//}
-			//l.downstreamFirebaseConnMutex.Unlock()
-			//}()
-			//l.downstreamPathStatsLock.Lock()
-			//l.downstreamPathStats = append(l.downstreamPathStats, fmt.Sprintf("%x", htlc.PaymentHash[:]))
-			//l.downstreamPathStatsLock.Unlock()
-			// Method 3:
-			//val := fmt.Sprintf("%x", htlc.PaymentHash[:])
-			//l.downstreamFirebaseConnMutex.Lock()
-			//debug_print(fmt.Sprintf("downstream val: %s\n", val))
-			//l.downstreamFirebaseConnMutex.Unlock()
 		}
 
 		l.tracef("Received downstream htlc: payment_hash=%x, "+
@@ -1845,25 +1766,6 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			l.fail(LinkFailureError{code: ErrInvalidUpdate},
 				"unable to handle upstream add HTLC: %v", err)
 			return
-		}
-
-		if LOG_FIREBASE {
-			//go func() {
-			//val := fmt.Sprintf("%x", msg.PaymentHash[:])
-			//l.upstreamFirebaseConnMutex.Lock()
-			//if _, err := l.upstreamFirebaseConn.Push(val); err != nil {
-			//debug_print("error when logging to firebase")
-			//}
-			//l.upstreamFirebaseConnMutex.Unlock()
-			//}()
-			// method 2:
-			//l.upstreamPathStatsLock.Lock()
-			//l.upstreamPathStats = append(l.upstreamPathStats, fmt.Sprintf("%x", msg.PaymentHash[:]))
-			//l.upstreamPathStatsLock.Unlock()
-			//val := fmt.Sprintf("%x", msg.PaymentHash[:])
-			//l.upstreamFirebaseConnMutex.Lock()
-			//debug_print(fmt.Sprintf("upstream val: %s\n", val))
-			//l.upstreamFirebaseConnMutex.Unlock()
 		}
 
 		l.tracef("Receive upstream htlc with payment hash(%x), "+
@@ -3027,34 +2929,6 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				PaymentPreimage: preimage,
 			})
 			needUpdate = true
-			if LOG_FIREBASE {
-				// recording successful htlc payments
-				// Method 4: send it over channel to separate goroutine
-				l.successChan <- fmt.Sprintf("%x", pd.RHash)
-
-				/// older method:
-				// we do this in a new goroutine so this doesn't hold up the rest of
-				// the lnd stuff from functioning
-				//go func() {
-				//vals := make(map[string] string)
-				//vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
-				//int32(time.Now().Unix()))
-				//l.successFirebaseConnMutex.Lock()
-				//if _, err := l.successFirebaseConn.Push(vals); err != nil {
-				//debug_print("error when logging to firebase")
-				//}
-				//l.successFirebaseConnMutex.Unlock()
-				//}()
-
-				// Method 3:
-				//vals := make(map[string] string)
-				//vals[fmt.Sprintf("%x", pd.RHash)] = fmt.Sprintf("%d",
-				//int32(time.Now().Unix()))
-				//l.successFirebaseConnMutex.Lock()
-				//debug_print(fmt.Sprintf("%v", vals))
-				//l.successFirebaseConnMutex.Unlock()
-			}
-
 			debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
 
 		// There are additional channels left within this route. So
