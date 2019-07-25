@@ -472,7 +472,7 @@ func (l *channelLink) periodicLogging() {
 			locBal, remBal, bandwidth, capacity)
 
 		i += 1
-		time.Sleep(time.Duration(UPDATE_INTERVAL) * time.Millisecond)
+		time.Sleep(time.Duration(STATS_INTERVAL) * time.Millisecond)
 	}
 }
 
@@ -1786,7 +1786,9 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			n_remote := msg.N_Remote
 			q_remote := msg.Q_Remote
 
-			l.mu_local = l.mu_local + float64(KAPPA)*(float64(l.n_local)+(float64(l.overflowQueue.Length())*T_UPDATE/QUEUE_DRAIN_TIME)-float64(n_remote)-(float64(q_remote)*T_UPDATE/QUEUE_DRAIN_TIME))
+			l.mu_local = l.mu_local + float64(KAPPA)*(float64(l.n_local)+
+				(float64(l.overflowQueue.Length())*T_UPDATE/QUEUE_DRAIN_TIME)-
+				float64(n_remote)-(float64(q_remote)*T_UPDATE/QUEUE_DRAIN_TIME))
 
 			if len(l.arrival_times) == 0 || len(l.service_times) == 0 {
 				return
@@ -1817,7 +1819,8 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			if qy < minq {
 				minq = qy
 			}
-			l.lambda = l.lambda + float64(ETA)*float64(T_UPDATE)*(ix*float64(wx)+iy*float64(wy)-float64(l.capacity)+(2.00*BETA*minq))
+			l.lambda = l.lambda + float64(ETA)*float64(T_UPDATE)*(ix*float64(wx)+iy*float64(wy)-
+				float64(l.capacity)+(2.00*float64(XI)*minq))
 
 			log.Errorf("LP Spider: info_type: updatePriceProbe,"+
 				"node: %s, peer: %s, time: %d, ix: %v, iy: %v,"+

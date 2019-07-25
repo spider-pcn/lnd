@@ -414,7 +414,7 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 		totalPrice += int(segmentPrice)
 	}
 	oldRate := routeInfoEntry.rate
-	ALPHA := 0.5
+	ALPHA, alphaErr := strconv.ParseFloat(os.Getenv("ALPHA", 64))
 	nextRate := float64(oldRate) + ALPHA*(1-float64(totalPrice))
 	if nextRate <= 0 {
 		nextRate = 0
@@ -422,9 +422,9 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 	routeInfoEntry.rate = nextRate
 	nodeName := os.Getenv("NODENAME")
 	log.Errorf("LP Spider: info_type: path_prices,"+
-		"sender: %s, dest: %v, pathID: %d, price: %v, rate: %v, time: %v",
+		"sender: %s, dest: %v, pathID: %d, price: %v, rate: %v, time: %v alpha: %v",
 		nodeName, dest, msg.PathID, totalPrice, nextRate,
-		int32(time.Now().Unix()))
+		int32(time.Now().Unix(), ALPHA))
 }
 
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
