@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -55,6 +56,7 @@ const (
 	ShortestPath = iota
 	Waterfilling = iota
 	LP           = iota
+	DCTCP        = iota
 )
 
 var (
@@ -407,14 +409,20 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 
 	// update the lp route info
 	dest := reversedRoute[len(reversedRoute)-1]
-
-	routeInfoEntry := (*r.missionControl.LPRouteInfoPerDest[dest])[msg.PathID]
+	routeInfoEntry := (*r.missionControl.SpiderRouteInfoPerDest[dest])[msg.PathID]
 	totalPrice := 0
 	for _, segmentPrice := range msg.RouterChannelPrices {
 		totalPrice += int(segmentPrice)
 	}
 	oldRate := routeInfoEntry.rate
-	ALPHA, alphaErr := strconv.ParseFloat(os.Getenv("ALPHA", 64))
+
+	// read alpha from env
+	ALPHA, alphaErr := strconv.ParseFloat(os.Getenv("ALPHA"), 64)
+	if alphaErr != nil {
+		ALPHA = 0.5
+	}
+
+	// update the new rate
 	nextRate := float64(oldRate) + ALPHA*(1-float64(totalPrice))
 	if nextRate <= 0 {
 		nextRate = 0
@@ -424,7 +432,7 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 	log.Errorf("LP Spider: info_type: path_prices,"+
 		"sender: %s, dest: %v, pathID: %d, price: %v, rate: %v, time: %v alpha: %v",
 		nodeName, dest, msg.PathID, totalPrice, nextRate,
-		int32(time.Now().Unix(), ALPHA))
+		int32(time.Now().Unix()), ALPHA)
 }
 
 // UpdateDestRouteBalances is called when a probe is completed to update the table with per
@@ -1880,14 +1888,14 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 		// The payment is placed into a queue for this specific
 		// destination. A separate goroutine will subscribe to the
 		// queue and process them on a FCFS basis.
-
 		dest := NewVertex(payment.Target)
 
 		// create LPPayment struct that we will add to the queue
-		LPPay := LPPayment{
+		LPPay := SpiderPayment{
 			payment: payment,
-			result:  make(chan LPPaymentResult),
+			result:  make(chan SpiderPaymentResult),
 		}
+
 		// Try to access (or create) the corresponding queue.
 		// First, lock the dest-queue map.
 		r.missionControl.paymentQueueMutex.Lock()
@@ -1920,7 +1928,7 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			// TODO(leiy): the channel size should at least be the same as the "K" in K-shortest path
 			// since we want to ensure each path have work to do when it is able to.
 			// 10 may be a good choice in real experiments
-			r.missionControl.paymentQueuePerDest[dest] = make(chan LPPayment, 8)
+			r.missionControl.paymentQueuePerDest[dest] = make(chan SpiderPayment, 8)
 			r.missionControl.paymentQueuePerDest[dest] <- LPPay
 			// unlock the dest-queue map
 			r.missionControl.paymentQueueMutex.Unlock()
@@ -1932,17 +1940,69 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 		case payRes := <-LPPay.result:
 			return payRes.preImage, payRes.route, payRes.err
 		}
+
+	case DCTCP:
+		return r.sendDCTCP(payment)
 	}
 
 	return [32]byte{}, nil, nil
 }
 
-type LPRouteInfo struct {
+// sends the payment as per DCTCP
+// is a blocking call that calls the relevant goroutine to handle DCTCP for this
+// particular destination and then waits for the result on a result channel
+// to send it to the calling application
+func (r *ChannelRouter) sendDCTCP(payment *LightningPayment) ([32]byte, *Route, error) {
+	dest := NewVertex(payment.Target)
+
+	// create SpiderPayment struct that we will add to the queue
+	thisPayment := SpiderPayment{
+		payment: payment,
+		result:  make(chan SpiderPaymentResult),
+	}
+
+	// Try to access (or create) the corresponding queue.
+	r.missionControl.paymentQueueMutex.Lock()
+	if q, exists := r.missionControl.paymentQueuePerDest[dest]; exists {
+		r.missionControl.paymentQueueMutex.Unlock()
+		select {
+		case q <- thisPayment:
+			log.Errorf("LP Spider: info_type: lp_queue,"+
+				"time: %d, sender: %v, dest: %v, status: accepted, queue_size: %d",
+				int32(time.Now().Unix()), r.nodeName, dest, len(q))
+			log.Debugf("Payment added to the queue, queue size is %v", len(q))
+		default:
+			log.Errorf("LP Spider: info_type: lp_queue,"+
+				"time: %d, sender: %v, dest: %v, status: declined, queue_size: %d",
+				int32(time.Now().Unix()), r.nodeName, dest, len(q))
+			log.Debugf("Declining sending payment due to full queue")
+			return [32]byte{}, nil, errors.New("full buffer, cannot queue, txn timed out")
+		}
+	} else {
+		// if the queue is not there, create a queue and start
+		// a goroutine to handle this queue (destiniation)
+		log.Infof("Starting per-dest payment dispatcher")
+		// TODO(leiy): what if some transactions timed out while staying in this channel?
+		// the moment it is dispatched, the switch will return  a timeout in htlcswitch/switch.go
+		r.missionControl.paymentQueuePerDest[dest] = make(chan SpiderPayment, 10)
+		r.missionControl.paymentQueuePerDest[dest] <- thisPayment
+		r.missionControl.paymentQueueMutex.Unlock()
+		go r.handleDCTCPPaymentToDest(dest, thisPayment)
+	}
+
+	// then we just block on the completed channel and wait for results
+	select {
+	case payRes := <-thisPayment.result:
+		return payRes.preImage, payRes.route, payRes.err
+	}
+}
+
+type SpiderRouteInfo struct {
 	route         *Route
 	lastUpdated   time.Time   // when this info is updated
 	rate          float64     // txn per second
 	ready         *time.Timer // timer indicating this path is ready
-	acceptor      chan LPPayment
+	acceptor      chan SpiderPayment
 	window        lnwire.MilliSatoshi // window size
 	inFlight      lnwire.MilliSatoshi // amount in flight
 	inFlightMutex *sync.Mutex
@@ -1951,23 +2011,23 @@ type LPRouteInfo struct {
 
 // startLPRoute handles a path.
 //
-// It first initializes an LPRouteInfo struct for the specified route,
+// It first initializes an SpiderRouteInfo struct for the specified route,
 // where a timer is created to pace transactions. When the timer fires,
 // it means this route is okay to process the next txn. To do so, it
-// passes its LPRouteInfo object through the "notifier" channel to the
+// passes its SpiderRouteInfo object through the "notifier" channel to the
 // handleLPPaymentToDest goroutine, expecting that goroutine will supply
 // a payment request to our "acceptor".
-func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, notifier chan LPRouteInfo) *LPRouteInfo {
+func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, notifier chan SpiderRouteInfo) *SpiderRouteInfo {
 	pathWindowSize := lnwire.MilliSatoshi(defaultWindowSize)
 	if !useWindows {
 		pathWindowSize = 1000000000000
 	}
 
-	path := LPRouteInfo{
+	path := SpiderRouteInfo{
 		// we set the path to be ready when we init the path
 		route:         route,
 		ready:         time.NewTimer(0),
-		acceptor:      make(chan LPPayment),
+		acceptor:      make(chan SpiderPayment),
 		window:        pathWindowSize,
 		inFlight:      0,
 		inFlightMutex: &sync.Mutex{},
@@ -1999,11 +2059,11 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 					// we use a goroutine here because all txns through this path
 					// will be dispatched here. so we want them to be sent in
 					// parallel.
-					go func(route *Route, payment LPPayment) {
+					go func(route *Route, payment SpiderPayment) {
 						preImage, route, err := r.SendToRoute([]*Route{route}, payment.payment)
 
 						// return result through the channel
-						result := LPPaymentResult{
+						result := SpiderPaymentResult{
 							preImage: preImage,
 							route:    route,
 							err:      err,
@@ -2039,23 +2099,131 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 
 }
 
+// handleDCTCPPaymentToDest handles a given payment to a destination for DCTCP
+// It manages the finding of paths and figuring out which path to send the payment on
+// if it can be sent out and then calls sendPaymentOnPath to do the actual sending
+func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPayment) {
+	// first, get the LPPayment queue from missionControl
+	r.missionControl.paymentQueueMutex.Lock()
+	q := r.missionControl.paymentQueuePerDest[dest]
+	r.missionControl.paymentQueueMutex.Unlock()
+
+	// then, init data structures to store per-route info of routes to this dest
+	var paths []*SpiderRouteInfo
+	// add the paths to mission control
+	r.missionControl.SpiderRouteInfoMutex.Lock()
+	_, pathsInited := r.missionControl.SpiderRouteInfoPerDest[dest]
+	if pathsInited {
+		paths = *(r.missionControl.SpiderRouteInfoPerDest[dest])
+	} else {
+		r.missionControl.SpiderRouteInfoPerDest[dest] = &paths
+	}
+	r.missionControl.SpiderRouteInfoMutex.Unlock()
+
+	// main loop to process the queue
+	// TODO(leiy): currently this function won't exit once started
+	// shall we stop it when the queue is cleared?
+	if pathsInited == false {
+		kShortest, err := r.getKShortestPaths(dest, payment.payment)
+		if err != nil {
+			log.Errorf("Failed to get K-shortest path")
+			result := SpiderPaymentResult{
+				preImage: [32]byte{},
+				route:    nil,
+				err:      errors.New("Failed in getting paths to destination"),
+			}
+			payment.result <- result
+			return
+		}
+		for _, shortPath := range kShortest {
+			// start path handler and add to paths
+			path := &SpiderRouteInfo{
+				// we set the path to be ready when we init the path
+				route:         shortPath,
+				ready:         nil,
+				acceptor:      nil,
+				window:        lnwire.MilliSatoshi(defaultWindowSize),
+				inFlight:      0,
+				inFlightMutex: &sync.Mutex{},
+				rate:          0,
+			}
+			paths = append(paths, path)
+		}
+	}
+
+	if len(q) == 0 {
+		for _, pathInfo := range paths {
+			pathInfo.inFlightMutex.Lock()
+			if pathInfo.inFlight < pathInfo.window {
+				// update inflight
+				pathInfo.inFlight = pathInfo.inFlight + payment.payment.Amount
+				pathInfo.inFlightMutex.Unlock()
+
+				go r.sendPaymentOnPath(pathInfo, payment, dest)
+				return
+			}
+			pathInfo.inFlightMutex.Unlock()
+		}
+	} else {
+		q <- payment
+	}
+	return
+}
+
+// helper function that sends a given payment on the specified path to the
+// specified destination. Sends the result back to the calling application
+// and then also sends out new payments on this path if possible
+func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment SpiderPayment, dest Vertex) {
+	preImage, route, err := r.SendToRoute([]*Route{pathInfo.route}, payment.payment)
+
+	// return result through the channel
+	result := SpiderPaymentResult{
+		preImage: preImage,
+		route:    route,
+		err:      err,
+	}
+	payment.result <- result
+
+	// get the queue to the destination to check if there are more payments
+	r.missionControl.paymentQueueMutex.Lock()
+	q := r.missionControl.paymentQueuePerDest[dest]
+	r.missionControl.paymentQueueMutex.Unlock()
+
+	// substract this txn from the inflight amt
+	pathInfo.inFlightMutex.Lock()
+	pathInfo.inFlight = pathInfo.inFlight - payment.payment.Amount
+
+	// send out more txns on this route if possible
+	if len(q) > 0 {
+		if pathInfo.inFlight < pathInfo.window {
+			nextPayment := <-q
+			pathInfo.inFlight = pathInfo.inFlight + nextPayment.payment.Amount
+			pathInfo.inFlightMutex.Unlock()
+
+			go r.sendPaymentOnPath(pathInfo, nextPayment, dest)
+			return
+		}
+	}
+	pathInfo.inFlightMutex.Unlock()
+}
+
 // handleLPPaymentToDest handles everything related to LP payments to the dest
 // TODO(leiy): details
-func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) *[]*LPRouteInfo {
+func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) *[]*SpiderRouteInfo {
 	// first, get the LPPayment queue from missionControl
 	r.missionControl.paymentQueueMutex.Lock()
 	q := r.missionControl.paymentQueuePerDest[dest]
 	r.missionControl.paymentQueueMutex.Unlock()
 
 	// make a channel to get next available path
-	nextAvailable := make(chan LPRouteInfo)
+	nextAvailable := make(chan SpiderRouteInfo)
 
 	// then, init data structures to store per-route info of routes to this dest
-	var paths []*LPRouteInfo
+	var paths []*SpiderRouteInfo
 	// add the paths to mission control
-	r.missionControl.LPRouteInfoMutex.Lock()
-	r.missionControl.LPRouteInfoPerDest[dest] = &paths
-	r.missionControl.LPRouteInfoMutex.Unlock()
+	r.missionControl.SpiderRouteInfoMutex.Lock()
+	r.missionControl.SpiderRouteInfoPerDest[dest] = &paths
+	r.missionControl.SpiderRouteInfoMutex.Unlock()
 
 	// We don't fill the paths for now, but rather wait for the first payment
 	// to come in. This is a hack, in order to overcome the fact that the
@@ -2072,7 +2240,7 @@ func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) *[]*LPRouteInfo {
 				kShortest, err := r.getKShortestPaths(dest, p.payment)
 				if err != nil {
 					log.Errorf("Failed to get K-shortest path")
-					result := LPPaymentResult{
+					result := SpiderPaymentResult{
 						preImage: [32]byte{},
 						route:    nil,
 						err:      errors.New("Failed to get K-shortest path for this destination"),

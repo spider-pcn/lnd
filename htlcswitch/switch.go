@@ -24,11 +24,6 @@ import (
 	"os"
 )
 
-// spider imports
-import (
-	"gopkg.in/zabawaba99/firego.v1"
-)
-
 const (
 	// DefaultFwdEventInterval is the duration between attempts to flush
 	// pending forwarding events to disk.
@@ -193,7 +188,6 @@ type Config struct {
 // HTLCs, forwarding HTLCs initiated from within the daemon, and finally
 // notifies users local-systems concerning their outstanding payment requests.
 type Switch struct {
-
 	started  int32 // To be used atomically.
 	shutdown int32 // To be used atomically.
 

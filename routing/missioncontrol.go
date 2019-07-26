@@ -81,11 +81,11 @@ type missionControl struct {
 
 	// paymentQueuePerDest maps destination to a go channel representing
 	// a queue of pending transactions to that specific destination.
-	paymentQueuePerDest map[Vertex](chan LPPayment)
-	paymentQueueMutex *sync.Mutex
+	paymentQueuePerDest map[Vertex](chan SpiderPayment)
+	paymentQueueMutex   *sync.Mutex
 
-	LPRouteInfoPerDest map[Vertex](*[]*LPRouteInfo)
-	LPRouteInfoMutex  *sync.Mutex
+	SpiderRouteInfoPerDest map[Vertex](*[]*SpiderRouteInfo)
+	SpiderRouteInfoMutex   *sync.Mutex
 }
 
 type RouteInfo struct {
@@ -96,21 +96,20 @@ type RouteInfo struct {
 	isEmpty     bool
 }
 
-// LPPayment represents a pending LP payment.
-type LPPayment struct {
-	payment     *LightningPayment		// The LightningPayment struct
-	result      chan LPPaymentResult	// Channel to notify the SendSpider
-						// invocation thad added this payment
-						// to the queue. 0 means succeeded.
+// SpiderPayment represents a pending Spider payment.
+// used differently for the price scheme and DCTCP
+type SpiderPayment struct {
+	payment *LightningPayment        // The LightningPayment struct
+	result  chan SpiderPaymentResult // Channel to notify the SendSpider
+	// invocation thad added this payment
+	// to the queue. 0 means succeeded.
 }
 
-type LPPaymentResult struct {
-	preImage    [32]byte
-	route       *Route
-	err         error
+type SpiderPaymentResult struct {
+	preImage [32]byte
+	route    *Route
+	err      error
 }
-
-
 
 // newMissionControl returns a new instance of missionControl.
 //
@@ -119,15 +118,15 @@ func newMissionControl(g *channeldb.ChannelGraph, selfNode *channeldb.LightningN
 	qb func(*channeldb.ChannelEdgeInfo) lnwire.MilliSatoshi) *missionControl {
 
 	return &missionControl{
-		failedEdges:    make(map[uint64]time.Time),
-		failedVertexes: make(map[Vertex]time.Time),
-		selfNode:       selfNode,
-		queryBandwidth: qb,
-		graph:          g,
-		paymentQueueMutex: &sync.Mutex{},
-		paymentQueuePerDest: make(map[Vertex](chan LPPayment)),
-		LPRouteInfoPerDest: make(map[Vertex](*[]*LPRouteInfo)),
-		LPRouteInfoMutex: &sync.Mutex{},
+		failedEdges:            make(map[uint64]time.Time),
+		failedVertexes:         make(map[Vertex]time.Time),
+		selfNode:               selfNode,
+		queryBandwidth:         qb,
+		graph:                  g,
+		paymentQueueMutex:      &sync.Mutex{},
+		paymentQueuePerDest:    make(map[Vertex](chan SpiderPayment)),
+		SpiderRouteInfoPerDest: make(map[Vertex](*[]*SpiderRouteInfo)),
+		SpiderRouteInfoMutex:   &sync.Mutex{},
 	}
 }
 
