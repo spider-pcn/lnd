@@ -1947,6 +1947,7 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 		}
 
 	case DCTCP:
+		log.Errorf("Received payment of size %v for DCTCP", payment.Amount)
 		return r.sendDCTCP(payment)
 	}
 
@@ -1965,6 +1966,8 @@ func (r *ChannelRouter) sendDCTCP(payment *LightningPayment) ([32]byte, *Route, 
 		payment: payment,
 		result:  make(chan SpiderPaymentResult),
 	}
+
+	log.Errorf("received a DCTCP payment")
 
 	// Try to access (or create) the corresponding queue.
 	r.missionControl.paymentQueueMutex.Lock()
@@ -2094,6 +2097,8 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 	q := r.missionControl.paymentQueuePerDest[dest]
 	r.missionControl.paymentQueueMutex.Unlock()
 
+	log.Errorf("DCTCP payment to destination")
+
 	// then, init data structures to store per-route info of routes to this dest
 	var paths []*SpiderRouteInfo
 	// add the paths to mission control
@@ -2107,8 +2112,6 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 	r.missionControl.SpiderRouteInfoMutex.Unlock()
 
 	// main loop to process the queue
-	// TODO(leiy): currently this function won't exit once started
-	// shall we stop it when the queue is cleared?
 	if pathsInited == false {
 		kShortest, err := r.getKShortestPaths(dest, payment.payment)
 		if err != nil {
@@ -2147,6 +2150,9 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 			if pathInfo.inFlight+payment.payment.Amount <= pathInfo.window {
 				// update inflight
 				pathInfo.inFlight = pathInfo.inFlight + payment.payment.Amount
+				log.Errorf("ALPHA: %f, BETA: %f, initiating  a new payment: %f inflight: %f, window : %f",
+					ALPHA, BETA,
+					payment.payment.Amount, pathInfo.inFlight, pathInfo.window)
 				pathInfo.inFlightMutex.Unlock()
 
 				go r.sendPaymentOnPath(pathInfo, payment, dest, i)
@@ -2187,7 +2193,7 @@ func (r *ChannelRouter) periodicLogging() {
 			for i, pathInfo := range *allPathInfo {
 				log.Errorf("DCTCP Spider: info_type: window_size,"+
 					"sender: %s, dest: %v, pathID: %d, inflight: %v, window: %v,"+
-					"fraction of marked packets: %v, time: %v",
+					"fractionMarked: %v, time: %v",
 					r.nodeName, dest, i, pathInfo.inFlight, pathInfo.window,
 					pathInfo.markedPackets/pathInfo.totalPackets,
 					int32(time.Now().Unix()))
@@ -2205,6 +2211,7 @@ func (r *ChannelRouter) periodicLogging() {
 func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment SpiderPayment, dest Vertex, pathID int) {
 	preImage, route, err := r.SendToRoute([]*Route{pathInfo.route}, payment.payment)
 
+	log.Errorf("sending single DCTCP payment to %f", dest)
 	// return result through the channel
 	result := SpiderPaymentResult{
 		preImage: preImage,
@@ -2226,7 +2233,8 @@ func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment Spi
 		ALPHA = 0.5
 		BETA = 0.2
 	}
-	log.Errorf("ALPHA: %f, BETA: %f", ALPHA, BETA)
+	log.Errorf("ALPHA: %f, BETA: %f, finished a payment : %f inflight: %f, window : %f", ALPHA, BETA, payment.payment.Amount,
+		pathInfo.inFlight, pathInfo.window)
 
 	// send out more txns on this route if possible
 	if q.Length() > 0 {
@@ -2234,6 +2242,8 @@ func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment Spi
 		if pathInfo.inFlight+nextPayment.payment.Amount <= pathInfo.window {
 			pathInfo.inFlight = pathInfo.inFlight + nextPayment.payment.Amount
 			q.Pop()
+			log.Errorf("ALPHA: %f, BETA: %f, initiating  a new payment: %f inflight: %f, window : %f", ALPHA, BETA,
+				nextPayment.payment.Amount, pathInfo.inFlight, pathInfo.window)
 			pathInfo.inFlightMutex.Unlock()
 
 			go r.sendPaymentOnPath(pathInfo, nextPayment, dest, pathID)
