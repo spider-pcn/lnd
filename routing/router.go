@@ -1961,33 +1961,12 @@ func (r *ChannelRouter) sendDCTCP(payment *LightningPayment) ([32]byte, *Route, 
 
 	// Try to access (or create) the corresponding queue.
 	r.missionControl.paymentQueueMutex.Lock()
-	if q, exists := r.missionControl.paymentQueuePerDest[dest]; exists {
-		r.missionControl.paymentQueueMutex.Unlock()
-		select {
-		case q <- thisPayment:
-			log.Errorf("LP Spider: info_type: lp_queue,"+
-				"time: %d, sender: %v, dest: %v, status: accepted, queue_size: %d",
-				int32(time.Now().Unix()), r.nodeName, dest, len(q))
-			log.Debugf("Payment added to the queue, queue size is %v", len(q))
-		default:
-			log.Errorf("LP Spider: info_type: lp_queue,"+
-				"time: %d, sender: %v, dest: %v, status: declined, queue_size: %d",
-				int32(time.Now().Unix()), r.nodeName, dest, len(q))
-			log.Debugf("Declining sending payment due to full queue")
-			return [32]byte{}, nil, errors.New("full buffer, cannot queue, txn timed out")
-		}
-	} else {
-		// if the queue is not there, create a queue and start
-		// a goroutine to handle this queue (destiniation)
-		log.Infof("Starting per-dest payment dispatcher")
-		// TODO(leiy): what if some transactions timed out while staying in this channel?
-		// the moment it is dispatched, the switch will return  a timeout in htlcswitch/switch.go
+	if _, exists := r.missionControl.paymentQueuePerDest[dest]; !exists {
 		r.missionControl.paymentQueuePerDest[dest] = make(chan SpiderPayment, 10)
-		r.missionControl.paymentQueuePerDest[dest] <- thisPayment
-		r.missionControl.paymentQueueMutex.Unlock()
-		go r.handleDCTCPPaymentToDest(dest, thisPayment)
 	}
+	r.missionControl.paymentQueueMutex.Unlock()
 
+	go r.handleDCTCPPaymentToDest(dest, thisPayment)
 	// then we just block on the completed channel and wait for results
 	select {
 	case payRes := <-thisPayment.result:
@@ -2149,21 +2128,40 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 		}
 	}
 
+	// send if queue is empty otherwise drop it
 	if len(q) == 0 {
-		for _, pathInfo := range paths {
+		for i, pathInfo := range paths {
 			pathInfo.inFlightMutex.Lock()
 			if pathInfo.inFlight < pathInfo.window {
 				// update inflight
 				pathInfo.inFlight = pathInfo.inFlight + payment.payment.Amount
 				pathInfo.inFlightMutex.Unlock()
 
-				go r.sendPaymentOnPath(pathInfo, payment, dest)
+				go r.sendPaymentOnPath(pathInfo, payment, dest, i)
 				return
 			}
 			pathInfo.inFlightMutex.Unlock()
 		}
 	} else {
-		q <- payment
+		select {
+		case q <- payment:
+			log.Errorf("DCTCP Spider: info_type: dctcp_queue,"+
+				"time: %d, sender: %v, dest: %v, status: accepted, queue_size: %d",
+				int32(time.Now().Unix()), r.nodeName, dest, len(q))
+			log.Debugf("Payment added to the queue, queue size is %v", len(q))
+		default:
+			log.Errorf("DCTCP Spider: info_type: dctcp_queue,"+
+				"time: %d, sender: %v, dest: %v, status: declined, queue_size: %d",
+				int32(time.Now().Unix()), r.nodeName, dest, len(q))
+			log.Debugf("Declining sending payment due to full queue")
+			result := SpiderPaymentResult{
+				preImage: [32]byte{},
+				route:    nil,
+				err:      errors.New("full buffer, cannot queue, transaction timed out"),
+			}
+			payment.result <- result
+			return
+		}
 	}
 	return
 }
@@ -2171,7 +2169,7 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 // helper function that sends a given payment on the specified path to the
 // specified destination. Sends the result back to the calling application
 // and then also sends out new payments on this path if possible
-func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment SpiderPayment, dest Vertex) {
+func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment SpiderPayment, dest Vertex, pathID int) {
 	preImage, route, err := r.SendToRoute([]*Route{pathInfo.route}, payment.payment)
 
 	// return result through the channel
@@ -2199,6 +2197,11 @@ func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment Spi
 	}
 	log.Errorf("ALPHA: %f, BETA: %f", ALPHA, BETA)
 
+	log.Errorf("DCTCP Spider: info_type: window_size,"+
+		"sender: %s, dest: %v, pathID: %d, inflight: %v, window: %v, time: %v alpha: %v",
+		r.nodeName, dest, pathID, pathInfo.inFlight, pathInfo.window,
+		int32(time.Now().Unix()), ALPHA)
+
 	// send out more txns on this route if possible
 	if len(q) > 0 {
 		if pathInfo.inFlight < pathInfo.window {
@@ -2206,7 +2209,7 @@ func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment Spi
 			pathInfo.inFlight = pathInfo.inFlight + nextPayment.payment.Amount
 			pathInfo.inFlightMutex.Unlock()
 
-			go r.sendPaymentOnPath(pathInfo, nextPayment, dest)
+			go r.sendPaymentOnPath(pathInfo, nextPayment, dest, pathID)
 			return
 		}
 	}
