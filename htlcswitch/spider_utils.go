@@ -10,6 +10,7 @@ import (
 // FIXME: temporary until we can use the global flags
 var SPIDER_FLAG bool = os.Getenv("SPIDER_QUEUE") == "1"
 var LP_ROUTING bool = os.Getenv("SPIDER_LP_ROUTING") == "1"
+var DCTCP bool = os.Getenv("SPIDER_DCTCP_ROUTING") == "1"
 var TIMEOUT bool = os.Getenv("SPIDER_TIMEOUT") == "1"
 
 var DEBUG_FLAG bool = false
@@ -22,6 +23,9 @@ var FIREBASE_URL string = "https://spider3-b4420.firebaseio.com/"
 var ETA, err = strconv.ParseFloat(os.Getenv("ETA"), 64)          //0.5
 var KAPPA, errKappa = strconv.ParseFloat(os.Getenv("Kappa"), 64) //0.5
 var XI, errXi = strconv.ParseFloat(os.Getenv("XI"), 64)          //1
+
+// globals for DCTCP, ALPHA BETA defined in rouyting/router.go
+var QUEUE_THRESHOLD, errQT = strconv.ParseFloat(os.Getenv("QUEUE_THRESHOLD"), 64) // 5.00
 
 // same as measurement_interval
 var T_UPDATE, errT = strconv.ParseFloat(os.Getenv("XI"), 64)                              //  1.5 in terms of seconds

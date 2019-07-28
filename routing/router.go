@@ -416,12 +416,10 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 	}
 	oldRate := routeInfoEntry.rate
 
-	// read alpha from env
-	ALPHA, alphaErr := strconv.ParseFloat(os.Getenv("ALPHA"), 64)
-	if alphaErr != nil {
+	var ALPHA, errAlpha = strconv.ParseFloat(os.Getenv("ALPHA"), 64) //0.5
+	if errAlpha != nil {
 		ALPHA = 0.5
 	}
-
 	// update the new rate
 	nextRate := float64(oldRate) + ALPHA*(1-float64(totalPrice))
 	if nextRate <= 0 {
@@ -2192,6 +2190,14 @@ func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment Spi
 	// substract this txn from the inflight amt
 	pathInfo.inFlightMutex.Lock()
 	pathInfo.inFlight = pathInfo.inFlight - payment.payment.Amount
+
+	var ALPHA, errAlpha = strconv.ParseFloat(os.Getenv("ALPHA"), 64) //0.5
+	var BETA, errBeta = strconv.ParseFloat(os.Getenv("BETA"), 64)    //0.5
+	if errAlpha != nil || errBeta != nil {
+		ALPHA = 0.5
+		BETA = 0.2
+	}
+	log.Errorf("ALPHA: %f, BETA: %f", ALPHA, BETA)
 
 	// send out more txns on this route if possible
 	if len(q) > 0 {
