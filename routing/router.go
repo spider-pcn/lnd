@@ -47,6 +47,9 @@ const (
 const defaultWindowSize = 200
 
 var useWindows bool = os.Getenv("SPIDER_USE_WINDOWS") == "1"
+var STATS_INTERVAL, _ = strconv.Atoi(os.Getenv("STATS_INTERVAL")) // 1000
+var ALPHA, errAlpha = strconv.ParseFloat(os.Getenv("ALPHA"), 64)  //0.5
+var BETA, errBeta = strconv.ParseFloat(os.Getenv("BETA"), 64)     //0.5
 
 const (
 	// Here each constant corrsponds to a Spider routing algorithm. Those
@@ -416,10 +419,6 @@ func (r *ChannelRouter) HandleCompletedProbeLP(msg *lnwire.ProbeRouteChannelPric
 	}
 	oldRate := routeInfoEntry.rate
 
-	var ALPHA, errAlpha = strconv.ParseFloat(os.Getenv("ALPHA"), 64) //0.5
-	if errAlpha != nil {
-		ALPHA = 0.5
-	}
 	// update the new rate
 	nextRate := float64(oldRate) + ALPHA*(1-float64(totalPrice))
 	if nextRate <= 0 {
@@ -574,6 +573,8 @@ func (r *ChannelRouter) Start() error {
 
 	r.wg.Add(1)
 	go r.networkHandler()
+
+	go r.periodicLogging()
 
 	return nil
 }
@@ -1982,6 +1983,8 @@ type SpiderRouteInfo struct {
 	acceptor      chan SpiderPayment
 	window        lnwire.MilliSatoshi // window size
 	inFlight      lnwire.MilliSatoshi // amount in flight
+	markedPackets float64
+	totalPackets  float64
 	inFlightMutex *sync.Mutex
 	waitTime      float64
 }
@@ -2166,6 +2169,27 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 	return
 }
 
+// function to periodically log all window/inflight/marked packets info for this scheme
+// must be run as a goroutine
+func (r *ChannelRouter) periodicLogging() {
+	for {
+
+		for dest, allPathInfo := range r.missionControl.SpiderRouteInfoPerDest {
+			for i, pathInfo := range *allPathInfo {
+				log.Errorf("DCTCP Spider: info_type: window_size,"+
+					"sender: %s, dest: %v, pathID: %d, inflight: %v, window: %v,"+
+					"fraction of marked packets: %v, time: %v",
+					r.nodeName, dest, i, pathInfo.inFlight, pathInfo.window,
+					pathInfo.markedPackets/pathInfo.totalPackets,
+					int32(time.Now().Unix()))
+				pathInfo.markedPackets = 0
+				pathInfo.totalPackets = 0
+			}
+		}
+		time.Sleep(time.Duration(STATS_INTERVAL) * time.Millisecond)
+	}
+}
+
 // helper function that sends a given payment on the specified path to the
 // specified destination. Sends the result back to the calling application
 // and then also sends out new payments on this path if possible
@@ -2189,18 +2213,11 @@ func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment Spi
 	pathInfo.inFlightMutex.Lock()
 	pathInfo.inFlight = pathInfo.inFlight - payment.payment.Amount
 
-	var ALPHA, errAlpha = strconv.ParseFloat(os.Getenv("ALPHA"), 64) //0.5
-	var BETA, errBeta = strconv.ParseFloat(os.Getenv("BETA"), 64)    //0.5
 	if errAlpha != nil || errBeta != nil {
 		ALPHA = 0.5
 		BETA = 0.2
 	}
 	log.Errorf("ALPHA: %f, BETA: %f", ALPHA, BETA)
-
-	log.Errorf("DCTCP Spider: info_type: window_size,"+
-		"sender: %s, dest: %v, pathID: %d, inflight: %v, window: %v, time: %v alpha: %v",
-		r.nodeName, dest, pathID, pathInfo.inFlight, pathInfo.window,
-		int32(time.Now().Unix()), ALPHA)
 
 	// send out more txns on this route if possible
 	if len(q) > 0 {
