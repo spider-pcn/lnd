@@ -9,6 +9,7 @@ import (
 	"github.com/coreos/bbolt"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/sheerun/queue"
 )
 
 const (
@@ -81,7 +82,7 @@ type missionControl struct {
 
 	// paymentQueuePerDest maps destination to a go channel representing
 	// a queue of pending transactions to that specific destination.
-	paymentQueuePerDest map[Vertex](chan SpiderPayment)
+	paymentQueuePerDest map[Vertex](*queue.Queue)
 	paymentQueueMutex   *sync.Mutex
 
 	SpiderRouteInfoPerDest map[Vertex](*[]*SpiderRouteInfo)
@@ -124,7 +125,7 @@ func newMissionControl(g *channeldb.ChannelGraph, selfNode *channeldb.LightningN
 		queryBandwidth:         qb,
 		graph:                  g,
 		paymentQueueMutex:      &sync.Mutex{},
-		paymentQueuePerDest:    make(map[Vertex](chan SpiderPayment)),
+		paymentQueuePerDest:    make(map[Vertex](*queue.Queue)),
 		SpiderRouteInfoPerDest: make(map[Vertex](*[]*SpiderRouteInfo)),
 		SpiderRouteInfoMutex:   &sync.Mutex{},
 	}

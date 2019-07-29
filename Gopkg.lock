@@ -315,6 +315,14 @@
   revision = "6724a57986aff9bff1a1770e9347036def7c89f6"
 
 [[projects]]
+  digest = "1:995238c839b3157dec0da4f69c2fb0521ecf6418310b1f487c152dff8260c131"
+  name = "github.com/sheerun/queue"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "619c5940110121dbadb790ad94f065089e661bca"
+  version = "v1.0.0"
+
+[[projects]]
   digest = "1:4cc492dc59eae18d3b05efc89f7ed68788258e34c5b0ea48834769fc823849e6"
   name = "github.com/tv42/zbase32"
   packages = ["."]
@@ -529,6 +537,7 @@
     "github.com/ltcsuite/ltcd/chaincfg",
     "github.com/ltcsuite/ltcd/wire",
     "github.com/miekg/dns",
+    "github.com/sheerun/queue",
     "github.com/tv42/zbase32",
     "github.com/urfave/cli",
     "golang.org/x/crypto/chacha20poly1305",

@@ -26,6 +26,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/multimutex"
 	"github.com/lightningnetwork/lnd/routing/chainview"
+	"github.com/sheerun/queue"
 	"os"
 )
 
@@ -42,9 +43,13 @@ const (
 	// defaultProbeInterval is the duration between probes for destinations
 	// that have outstanding payments
 	defaultProbeInterval = time.Duration(time.Millisecond * 100)
-)
 
-const defaultWindowSize = 200
+	// maximum number of packets held at the sender
+	maxSenderQueueSize = 20
+
+	// initial window size
+	defaultWindowSize = 200000
+)
 
 var useWindows bool = os.Getenv("SPIDER_USE_WINDOWS") == "1"
 var STATS_INTERVAL, _ = strconv.Atoi(os.Getenv("STATS_INTERVAL")) // 1000
@@ -1903,18 +1908,19 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			r.missionControl.paymentQueueMutex.Unlock()
 			// if the queue is there, just add to the queue
 			// but if the channel buffer is full, just return and tell the sender
-			select {
-			case q <- LPPay:
+			if q.Length() < maxSenderQueueSize {
+				q.Append(LPPay)
 				log.Errorf("LP Spider: info_type: lp_queue,"+
 					"time: %d, sender: %v, dest: %v, status: accepted, queue_size: %d",
-					int32(time.Now().Unix()), r.nodeName, dest, len(q))
-				log.Debugf("Payment added to the queue, queue size is %v", len(q))
-			default:
+					int32(time.Now().Unix()), r.nodeName, dest, q.Length())
+				log.Debugf("Payment added to the queue, queue size is %v", q.Length())
+			} else {
 				log.Errorf("LP Spider: info_type: lp_queue,"+
 					"time: %d, sender: %v, dest: %v, status: declined, queue_size: %d",
-					int32(time.Now().Unix()), r.nodeName, dest, len(q))
+					int32(time.Now().Unix()), r.nodeName, dest, q.Length())
 				log.Debugf("Declining sending payment due to full queue")
-				return [32]byte{}, nil, errors.New("Payment can not be queued due to full buffer, and timed out by LP sender")
+				return [32]byte{}, nil, errors.New("Payment can not be queued due to full buffer," +
+					"and timed out by LP sender")
 			}
 		} else {
 			// if the queue is not there, create a queue and start
@@ -1927,8 +1933,8 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 			// TODO(leiy): the channel size should at least be the same as the "K" in K-shortest path
 			// since we want to ensure each path have work to do when it is able to.
 			// 10 may be a good choice in real experiments
-			r.missionControl.paymentQueuePerDest[dest] = make(chan SpiderPayment, 8)
-			r.missionControl.paymentQueuePerDest[dest] <- LPPay
+			r.missionControl.paymentQueuePerDest[dest] = queue.New()
+			r.missionControl.paymentQueuePerDest[dest].Append(LPPay)
 			// unlock the dest-queue map
 			r.missionControl.paymentQueueMutex.Unlock()
 			go r.handleLPPaymentToDest(dest)
@@ -1963,7 +1969,7 @@ func (r *ChannelRouter) sendDCTCP(payment *LightningPayment) ([32]byte, *Route, 
 	// Try to access (or create) the corresponding queue.
 	r.missionControl.paymentQueueMutex.Lock()
 	if _, exists := r.missionControl.paymentQueuePerDest[dest]; !exists {
-		r.missionControl.paymentQueuePerDest[dest] = make(chan SpiderPayment, 10)
+		r.missionControl.paymentQueuePerDest[dest] = queue.New()
 	}
 	r.missionControl.paymentQueueMutex.Unlock()
 
@@ -2132,10 +2138,13 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 	}
 
 	// send if queue is empty otherwise drop it
-	if len(q) == 0 {
+	if q.Length() == 0 {
 		for i, pathInfo := range paths {
 			pathInfo.inFlightMutex.Lock()
-			if pathInfo.inFlight < pathInfo.window {
+			log.Errorf("ALPHA: %f, BETA: %f, before initiating  a new payment: %f inflight: %f, window : %f",
+				ALPHA, BETA,
+				payment.payment.Amount, pathInfo.inFlight, pathInfo.window)
+			if pathInfo.inFlight+payment.payment.Amount <= pathInfo.window {
 				// update inflight
 				pathInfo.inFlight = pathInfo.inFlight + payment.payment.Amount
 				pathInfo.inFlightMutex.Unlock()
@@ -2146,16 +2155,16 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 			pathInfo.inFlightMutex.Unlock()
 		}
 	} else {
-		select {
-		case q <- payment:
+		if q.Length() < maxSenderQueueSize {
+			q.Append(payment)
 			log.Errorf("DCTCP Spider: info_type: dctcp_queue,"+
 				"time: %d, sender: %v, dest: %v, status: accepted, queue_size: %d",
-				int32(time.Now().Unix()), r.nodeName, dest, len(q))
-			log.Debugf("Payment added to the queue, queue size is %v", len(q))
-		default:
+				int32(time.Now().Unix()), r.nodeName, dest, q.Length())
+			log.Debugf("Payment added to the queue, queue size is %v", q.Length())
+		} else {
 			log.Errorf("DCTCP Spider: info_type: dctcp_queue,"+
 				"time: %d, sender: %v, dest: %v, status: declined, queue_size: %d",
-				int32(time.Now().Unix()), r.nodeName, dest, len(q))
+				int32(time.Now().Unix()), r.nodeName, dest, q.Length())
 			log.Debugf("Declining sending payment due to full queue")
 			result := SpiderPaymentResult{
 				preImage: [32]byte{},
@@ -2220,10 +2229,11 @@ func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment Spi
 	log.Errorf("ALPHA: %f, BETA: %f", ALPHA, BETA)
 
 	// send out more txns on this route if possible
-	if len(q) > 0 {
-		if pathInfo.inFlight < pathInfo.window {
-			nextPayment := <-q
+	if q.Length() > 0 {
+		nextPayment := q.Front().(SpiderPayment)
+		if pathInfo.inFlight+nextPayment.payment.Amount <= pathInfo.window {
 			pathInfo.inFlight = pathInfo.inFlight + nextPayment.payment.Amount
+			q.Pop()
 			pathInfo.inFlightMutex.Unlock()
 
 			go r.sendPaymentOnPath(pathInfo, nextPayment, dest, pathID)
@@ -2260,38 +2270,36 @@ func (r *ChannelRouter) handleLPPaymentToDest(dest Vertex) *[]*SpiderRouteInfo {
 	// TODO(leiy): currently this function won't exit once started
 	// shall we stop it when the queue is cleared?
 	for {
+		p := q.Pop().(SpiderPayment)
+		if pathsInited == false {
+			kShortest, err := r.getKShortestPaths(dest, p.payment)
+			if err != nil {
+				log.Errorf("Failed to get K-shortest path")
+				result := SpiderPaymentResult{
+					preImage: [32]byte{},
+					route:    nil,
+					err:      errors.New("Failed to get K-shortest path for this destination"),
+				}
+				p.result <- result
+				continue
+			}
+			for i, shortPath := range kShortest {
+				// start path handler and add to paths
+				paths = append(paths, r.startLPRoute(dest, shortPath, uint32(i), nextAvailable))
+				// start probing the path
+				// TODO(leiy): we won't stop probing before sigcomm
+				stopProbing := make(chan int)
+				go r.startLPProbing(dest, shortPath, uint32(i), stopProbing)
+			}
+			pathsInited = true
+		}
+		// if there is a new payment to be processed
+		// wait for the next available path, or wait for the timeout signal
 		select {
-		case p := <-q:
-			if pathsInited == false {
-				kShortest, err := r.getKShortestPaths(dest, p.payment)
-				if err != nil {
-					log.Errorf("Failed to get K-shortest path")
-					result := SpiderPaymentResult{
-						preImage: [32]byte{},
-						route:    nil,
-						err:      errors.New("Failed to get K-shortest path for this destination"),
-					}
-					p.result <- result
-					continue
-				}
-				for i, shortPath := range kShortest {
-					// start path handler and add to paths
-					paths = append(paths, r.startLPRoute(dest, shortPath, uint32(i), nextAvailable))
-					// start probing the path
-					// TODO(leiy): we won't stop probing before sigcomm
-					stopProbing := make(chan int)
-					go r.startLPProbing(dest, shortPath, uint32(i), stopProbing)
-				}
-				pathsInited = true
-			}
-			// if there is a new payment to be processed
-			// wait for the next available path, or wait for the timeout signal
-			select {
-			case availablePath := <-nextAvailable:
-				// use this path
-				log.Debugf("Payment dispatched to per-path handler, queue size is %v", len(q))
-				availablePath.acceptor <- p
-			}
+		case availablePath := <-nextAvailable:
+			// use this path
+			log.Debugf("Payment dispatched to per-path handler, queue size is %v", q.Length())
+			availablePath.acceptor <- p
 		}
 	}
 	return &paths
