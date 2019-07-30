@@ -55,7 +55,7 @@ const (
 	MsgReplyChannelRange                     = 264
 	MsgGossipTimestampRange                  = 265
 	MsgProbeRouteChannelBalances             = 266
-	MsgUpdatePriceProbe											 = 267
+	MsgUpdatePriceProbe                      = 267
 	MsgProbeRouteChannelPrices               = 268
 )
 

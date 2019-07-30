@@ -59,6 +59,9 @@ type UpdateAddHTLC struct {
 
 	// Duration before this message times out
 	Timeout time.Duration
+
+	// is this packet marked because of a large queue delay somewhere
+	Marked uint32
 }
 
 // NewUpdateAddHTLC returns a new empty UpdateAddHTLC message.
@@ -84,6 +87,7 @@ func (c *UpdateAddHTLC) Decode(r io.Reader, pver uint32) error {
 		c.OnionBlob[:],
 		&c.Crafted,
 		&c.Timeout,
+		&c.Marked,
 	)
 }
 
@@ -101,6 +105,7 @@ func (c *UpdateAddHTLC) Encode(w io.Writer, pver uint32) error {
 		c.OnionBlob[:],
 		c.Crafted,
 		c.Timeout,
+		c.Marked,
 	)
 }
 
@@ -118,5 +123,5 @@ func (c *UpdateAddHTLC) MsgType() MessageType {
 // This is part of the lnwire.Message interface.
 func (c *UpdateAddHTLC) MaxPayloadLength(uint32) uint32 {
 	// 1450
-	return 32 + 8 + 4 + 8 + 32 + 1366 + 8 + 8
+	return 32 + 8 + 4 + 8 + 32 + 1366 + 8 + 8 + 4
 }

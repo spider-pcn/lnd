@@ -24,6 +24,9 @@ type UpdateFailMalformedHTLC struct {
 
 	// FailureCode the exact reason why onion blob haven't been parsed.
 	FailureCode FailCode
+
+	// is this packet marked because of a large queue delay somewhere
+	Marked uint32
 }
 
 // A compile time check to ensure UpdateFailMalformedHTLC implements the
@@ -40,6 +43,7 @@ func (c *UpdateFailMalformedHTLC) Decode(r io.Reader, pver uint32) error {
 		&c.ID,
 		c.ShaOnionBlob[:],
 		&c.FailureCode,
+		&c.Marked,
 	)
 }
 
@@ -53,6 +57,7 @@ func (c *UpdateFailMalformedHTLC) Encode(w io.Writer, pver uint32) error {
 		c.ID,
 		c.ShaOnionBlob[:],
 		c.FailureCode,
+		c.Marked,
 	)
 }
 
@@ -70,6 +75,6 @@ func (c *UpdateFailMalformedHTLC) MsgType() MessageType {
 //
 // This is part of the lnwire.Message interface.
 func (c *UpdateFailMalformedHTLC) MaxPayloadLength(uint32) uint32 {
-	// 32 +  8 + 32 + 2
-	return 74
+	// 32 +  8 + 32 + 2 + 4
+	return 78
 }

@@ -24,6 +24,9 @@ type UpdateFailHTLC struct {
 	// failed. This blob is only fully decryptable by the initiator of the
 	// HTLC message.
 	Reason OpaqueReason
+
+	// is this packet marked because of a large queue delay somewhere
+	Marked uint32
 }
 
 // A compile time check to ensure UpdateFailHTLC implements the lnwire.Message
@@ -39,6 +42,7 @@ func (c *UpdateFailHTLC) Decode(r io.Reader, pver uint32) error {
 		&c.ChanID,
 		&c.ID,
 		&c.Reason,
+		&c.Marked,
 	)
 }
 
@@ -51,6 +55,7 @@ func (c *UpdateFailHTLC) Encode(w io.Writer, pver uint32) error {
 		c.ChanID,
 		c.ID,
 		c.Reason,
+		c.Marked,
 	)
 }
 
@@ -80,6 +85,9 @@ func (c *UpdateFailHTLC) MaxPayloadLength(uint32) uint32 {
 
 	// Length of the Reason
 	length += 292
+
+	// Length of marked
+	length += 4
 
 	return length
 }

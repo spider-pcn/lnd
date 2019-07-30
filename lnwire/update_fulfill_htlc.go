@@ -19,16 +19,20 @@ type UpdateFulfillHTLC struct {
 	// PaymentPreimage is the R-value preimage required to fully settle an
 	// HTLC.
 	PaymentPreimage [32]byte
+
+	// is this packet marked because of a large queue delay somewhere
+	Marked uint32
 }
 
 // NewUpdateFulfillHTLC returns a new empty UpdateFulfillHTLC.
 func NewUpdateFulfillHTLC(chanID ChannelID, id uint64,
-	preimage [32]byte) *UpdateFulfillHTLC {
+	preimage [32]byte, marked uint32) *UpdateFulfillHTLC {
 
 	return &UpdateFulfillHTLC{
 		ChanID:          chanID,
 		ID:              id,
 		PaymentPreimage: preimage,
+		Marked:          marked,
 	}
 }
 
@@ -45,6 +49,7 @@ func (c *UpdateFulfillHTLC) Decode(r io.Reader, pver uint32) error {
 		&c.ChanID,
 		&c.ID,
 		c.PaymentPreimage[:],
+		&c.Marked,
 	)
 }
 
@@ -57,6 +62,7 @@ func (c *UpdateFulfillHTLC) Encode(w io.Writer, pver uint32) error {
 		c.ChanID,
 		c.ID,
 		c.PaymentPreimage[:],
+		c.Marked,
 	)
 }
 
@@ -73,6 +79,6 @@ func (c *UpdateFulfillHTLC) MsgType() MessageType {
 //
 // This is part of the lnwire.Message interface.
 func (c *UpdateFulfillHTLC) MaxPayloadLength(uint32) uint32 {
-	// 32 + 8 + 32
-	return 72
+	// 32 + 8 + 32 + 4
+	return 76
 }
