@@ -412,6 +412,7 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 		incomingHTLCID: paymentID,
 		outgoingChanID: firstHop,
 		htlc:           htlc,
+		marked:         htlc.Marked,
 	}
 	debug_print(fmt.Sprintf("in SendHTLC, forwarding packet: %x", htlc.PaymentHash))
 
@@ -1337,7 +1338,9 @@ func (s *Switch) failAddPacket(packet *htlcPacket,
 		circuit:        packet.circuit,
 		htlc: &lnwire.UpdateFailHTLC{
 			Reason: reason,
+			Marked: packet.marked,
 		},
+		marked: packet.marked,
 	}
 
 	// Route a fail packet back to the source link.
@@ -1650,6 +1653,7 @@ out:
 				outgoingChanID: resolutionMsg.SourceChan,
 				outgoingHTLCID: resolutionMsg.HtlcIndex,
 				isResolution:   true,
+				marked:         1,
 			}
 
 			// Resolution messages will either be cancelling
@@ -1657,10 +1661,12 @@ out:
 			// outgoing HTLC. Based on this, we'll map the message
 			// to the proper htlcPacket.
 			if resolutionMsg.Failure != nil {
-				pkt.htlc = &lnwire.UpdateFailHTLC{}
+				pkt.htlc = &lnwire.UpdateFailHTLC{
+					Marked: 1}
 			} else {
 				pkt.htlc = &lnwire.UpdateFulfillHTLC{
 					PaymentPreimage: *resolutionMsg.PreImage,
+					Marked:          1,
 				}
 			}
 
@@ -1910,7 +1916,9 @@ func (s *Switch) reforwardSettleFails(fwdPkgs []*channeldb.FwdPkg) {
 					destRef:        pd.DestRef,
 					htlc: &lnwire.UpdateFulfillHTLC{
 						PaymentPreimage: pd.RPreimage,
+						Marked:          pd.Marked,
 					},
+					marked: pd.Marked,
 				}
 
 				// Add the packet to the batch to be forwarded, and
@@ -1931,7 +1939,9 @@ func (s *Switch) reforwardSettleFails(fwdPkgs []*channeldb.FwdPkg) {
 					destRef:        pd.DestRef,
 					htlc: &lnwire.UpdateFailHTLC{
 						Reason: lnwire.OpaqueReason(pd.FailReason),
+						Marked: pd.Marked,
 					},
+					marked: pd.Marked,
 				}
 
 				// Add the packet to the batch to be forwarded, and

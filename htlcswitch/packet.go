@@ -52,6 +52,9 @@ type htlcPacket struct {
 	// htlc lnwire message type of which depends on switch request type.
 	htlc lnwire.Message
 
+	// whether the htlc was marked within this packet
+	marked uint32
+
 	// obfuscator contains the necessary state to allow the switch to wrap
 	// any forwarded errors in an additional layer of encryption.
 	obfuscator ErrorEncrypter

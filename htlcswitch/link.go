@@ -254,10 +254,10 @@ type channelLink struct {
 	mu_remote float64
 	lambda    float64
 
-	N        uint64 // value of transactions since the last UpdatePriceProbe
-	capacity uint64
-	i_local  uint64
-	n_local  uint64
+	N             uint64 // value of transactions since the last UpdatePriceProbe
+	capacity      uint64
+	i_local       uint64
+	n_local       uint64
 	arrival_times []time.Time
 	service_times []time.Time
 
@@ -1391,7 +1391,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 					localFailure:   localFailure,
 					htlc: &lnwire.UpdateFailHTLC{
 						Reason: reason,
+						Marked: pkt.marked,
 					},
+					marked: pkt.marked,
 				}
 
 				go l.forwardBatch(failPkt)
@@ -1505,7 +1507,9 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 					localFailure:   localFailure,
 					htlc: &lnwire.UpdateFailHTLC{
 						Reason: reason,
+						Marked: pkt.marked,
 					},
+					marked: pkt.marked,
 				}
 
 				go l.forwardBatch(failPkt)
@@ -2567,7 +2571,9 @@ func (l *channelLink) processRemoteSettleFails(fwdPkg *channeldb.FwdPkg,
 				destRef:        pd.DestRef,
 				htlc: &lnwire.UpdateFulfillHTLC{
 					PaymentPreimage: pd.RPreimage,
+					Marked:          pd.Marked,
 				},
+				marked: pd.Marked,
 			}
 
 			// Add the packet to the batch to be forwarded, and
@@ -2597,7 +2603,9 @@ func (l *channelLink) processRemoteSettleFails(fwdPkg *channeldb.FwdPkg,
 				destRef:        pd.DestRef,
 				htlc: &lnwire.UpdateFailHTLC{
 					Reason: lnwire.OpaqueReason(pd.FailReason),
+					Marked: pd.Marked,
 				},
+				marked: pd.Marked,
 			}
 
 			// Add the packet to the batch to be forwarded, and
@@ -2700,7 +2708,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			// should send the malformed htlc error to payment
 			// sender.
 			l.sendMalformedHTLCError(pd.HtlcIndex, failureCode,
-				onionBlob[:], pd.SourceRef)
+				onionBlob[:], pd.SourceRef, pd.Marked)
 			needUpdate = true
 
 			log.Errorf("unable to decode onion hop "+
@@ -2718,7 +2726,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			// should send the malformed htlc error to payment
 			// sender.
 			l.sendMalformedHTLCError(pd.HtlcIndex, failureCode,
-				onionBlob[:], pd.SourceRef)
+				onionBlob[:], pd.SourceRef, pd.Marked)
 			needUpdate = true
 
 			log.Errorf("unable to decode onion "+
@@ -2750,7 +2758,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 
 				failure := lnwire.FailFinalExpiryTooSoon{}
 				l.sendHTLCError(
-					pd.HtlcIndex, &failure, obfuscator, pd.SourceRef,
+					pd.HtlcIndex, &failure, obfuscator, pd.SourceRef, pd.Marked,
 				)
 				needUpdate = true
 				continue
@@ -2768,7 +2776,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					" %v", err)
 				failure := lnwire.FailUnknownPaymentHash{}
 				l.sendHTLCError(
-					pd.HtlcIndex, failure, obfuscator, pd.SourceRef,
+					pd.HtlcIndex, failure, obfuscator, pd.SourceRef, pd.Marked,
 				)
 
 				needUpdate = true
@@ -2817,7 +2825,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 
 				failure := lnwire.FailIncorrectPaymentAmount{}
 				l.sendHTLCError(
-					pd.HtlcIndex, failure, obfuscator, pd.SourceRef,
+					pd.HtlcIndex, failure, obfuscator, pd.SourceRef, pd.Marked,
 				)
 
 				needUpdate = true
@@ -2844,7 +2852,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 
 				failure := lnwire.FailIncorrectPaymentAmount{}
 				l.sendHTLCError(
-					pd.HtlcIndex, failure, obfuscator, pd.SourceRef,
+					pd.HtlcIndex, failure, obfuscator, pd.SourceRef, pd.Marked,
 				)
 
 				needUpdate = true
@@ -2867,7 +2875,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					fwdInfo.OutgoingCTLV,
 				)
 				l.sendHTLCError(
-					pd.HtlcIndex, failure, obfuscator, pd.SourceRef,
+					pd.HtlcIndex, failure, obfuscator, pd.SourceRef, pd.Marked,
 				)
 
 				needUpdate = true
@@ -2883,7 +2891,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					fwdInfo.OutgoingCTLV,
 				)
 				l.sendHTLCError(
-					pd.HtlcIndex, failure, obfuscator, pd.SourceRef,
+					pd.HtlcIndex, failure, obfuscator, pd.SourceRef, pd.Marked,
 				)
 
 				needUpdate = true
@@ -2930,6 +2938,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				ChanID:          l.ChanID(),
 				ID:              pd.HtlcIndex,
 				PaymentPreimage: preimage,
+				Marked:          pd.Marked,
 			})
 			needUpdate = true
 			debug_print(fmt.Sprintf("pd.RHash is: (%x)", pd.RHash))
@@ -2966,6 +2975,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					PaymentHash: pd.RHash,
 					Crafted:     pd.Crafted,
 					Timeout:     pd.SpiderTimeout,
+					Marked:      pd.Marked,
 				}
 
 				// Finally, we'll encode the onion packet for
@@ -2989,6 +2999,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					obfuscator:      obfuscator,
 					incomingTimeout: pd.Timeout,
 					outgoingTimeout: fwdInfo.OutgoingCTLV,
+					marked:          pd.Marked,
 				}
 				switchPackets = append(
 					switchPackets, updatePacket,
@@ -3009,6 +3020,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				PaymentHash: pd.RHash,
 				Crafted:     pd.Crafted,
 				Timeout:     pd.SpiderTimeout,
+				Marked:      pd.Marked,
 			}
 
 			// Finally, we'll encode the onion packet for the
@@ -3034,7 +3046,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				}
 
 				l.sendHTLCError(
-					pd.HtlcIndex, failure, obfuscator, pd.SourceRef,
+					pd.HtlcIndex, failure, obfuscator, pd.SourceRef, pd.Marked,
 				)
 				needUpdate = true
 				continue
@@ -3060,6 +3072,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					obfuscator:      obfuscator,
 					incomingTimeout: pd.Timeout,
 					outgoingTimeout: fwdInfo.OutgoingCTLV,
+					marked:          pd.Marked,
 				}
 
 				fwdPkg.FwdFilter.Set(idx)
@@ -3139,7 +3152,7 @@ func (l *channelLink) handleBatchFwdErrs(errChan chan error) {
 // sendHTLCError functions cancels HTLC and send cancel message back to the
 // peer from which HTLC was received.
 func (l *channelLink) sendHTLCError(htlcIndex uint64, failure lnwire.FailureMessage,
-	e ErrorEncrypter, sourceRef *channeldb.AddRef) {
+	e ErrorEncrypter, sourceRef *channeldb.AddRef, marked uint32) {
 
 	reason, err := e.EncryptFirstHop(failure)
 	if err != nil {
@@ -3157,13 +3170,14 @@ func (l *channelLink) sendHTLCError(htlcIndex uint64, failure lnwire.FailureMess
 		ChanID: l.ChanID(),
 		ID:     htlcIndex,
 		Reason: reason,
+		Marked: marked,
 	})
 }
 
 // sendMalformedHTLCError helper function which sends the malformed HTLC update
 // to the payment sender.
 func (l *channelLink) sendMalformedHTLCError(htlcIndex uint64,
-	code lnwire.FailCode, onionBlob []byte, sourceRef *channeldb.AddRef) {
+	code lnwire.FailCode, onionBlob []byte, sourceRef *channeldb.AddRef, marked uint32) {
 
 	shaOnionBlob := sha256.Sum256(onionBlob)
 	err := l.channel.MalformedFailHTLC(htlcIndex, code, shaOnionBlob, sourceRef)
@@ -3177,6 +3191,7 @@ func (l *channelLink) sendMalformedHTLCError(htlcIndex uint64,
 		ID:           htlcIndex,
 		ShaOnionBlob: shaOnionBlob,
 		FailureCode:  code,
+		Marked:       marked,
 	})
 }
 

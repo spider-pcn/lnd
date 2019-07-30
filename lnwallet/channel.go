@@ -342,8 +342,11 @@ type PaymentDescriptor struct {
 	isForwarded bool
 
 	// for timeout
-	Crafted time.Time
+	Crafted       time.Time
 	SpiderTimeout time.Duration
+
+	// for marking for Spider DCTCP
+	Marked uint32
 }
 
 // PayDescsFromRemoteLogUpdates converts a slice of LogUpdates received from the
@@ -384,8 +387,9 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Height: height,
 					Index:  uint16(i),
 				},
-				Crafted: wireMsg.Crafted,
+				Crafted:       wireMsg.Crafted,
 				SpiderTimeout: wireMsg.Timeout,
+				Marked:        wireMsg.Marked,
 			}
 			pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 			copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -400,6 +404,7 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Height: height,
 					Index:  uint16(i),
 				},
+				Marked: wireMsg.Marked,
 			}
 
 		case *lnwire.UpdateFailHTLC:
@@ -412,6 +417,7 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Height: height,
 					Index:  uint16(i),
 				},
+				Marked: wireMsg.Marked,
 			}
 
 		case *lnwire.UpdateFailMalformedHTLC:
@@ -425,6 +431,7 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Height: height,
 					Index:  uint16(i),
 				},
+				Marked: wireMsg.Marked,
 			}
 		}
 
@@ -795,6 +802,7 @@ func (lc *LightningChannel) diskHtlcToPayDesc(feeRate SatPerKWeight,
 		ourWitnessScript:   ourWitnessScript,
 		theirPkScript:      theirP2WSH,
 		theirWitnessScript: theirWitnessScript,
+		Marked:             htlc.Marked,
 	}
 
 	return pd, nil
@@ -1538,6 +1546,7 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			addCommitHeightRemote: commitHeight,
 			SpiderTimeout:         wireMsg.Timeout,
 			Crafted:               wireMsg.Crafted,
+			Marked:                wireMsg.Marked,
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -1570,6 +1579,7 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			ParentIndex:              ogHTLC.HtlcIndex,
 			EntryType:                Settle,
 			removeCommitHeightRemote: commitHeight,
+			Marked:                   wireMsg.Marked,
 		}
 
 	// If we sent a failure for a prior incoming HTLC, then we'll consult
@@ -1587,6 +1597,7 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			EntryType:                Fail,
 			FailReason:               wireMsg.Reason[:],
 			removeCommitHeightRemote: commitHeight,
+			Marked:                   wireMsg.Marked,
 		}
 
 	// HTLC fails due to malformed onion blobs are treated the exact same
@@ -1604,6 +1615,7 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			FailCode:                 wireMsg.FailureCode,
 			ShaOnionBlob:             wireMsg.ShaOnionBlob,
 			removeCommitHeightRemote: commitHeight,
+			Marked:                   wireMsg.Marked,
 		}
 	}
 
@@ -2883,6 +2895,7 @@ func (lc *LightningChannel) createCommitDiff(
 				PaymentHash: pd.RHash,
 				Crafted:     pd.Crafted,
 				Timeout:     pd.SpiderTimeout,
+				Marked:      pd.Marked,
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
@@ -2906,6 +2919,7 @@ func (lc *LightningChannel) createCommitDiff(
 				ChanID:          chanID,
 				ID:              pd.ParentIndex,
 				PaymentPreimage: pd.RPreimage,
+				Marked:          pd.Marked,
 			}
 
 		case Fail:
@@ -2913,6 +2927,7 @@ func (lc *LightningChannel) createCommitDiff(
 				ChanID: chanID,
 				ID:     pd.ParentIndex,
 				Reason: pd.FailReason,
+				Marked: pd.Marked,
 			}
 
 		case MalformedFail:
@@ -2921,6 +2936,7 @@ func (lc *LightningChannel) createCommitDiff(
 				ID:           pd.ParentIndex,
 				ShaOnionBlob: pd.ShaOnionBlob,
 				FailureCode:  pd.FailCode,
+				Marked:       pd.Marked,
 			}
 		}
 
@@ -3646,13 +3662,13 @@ func (lc *LightningChannel) validateCommitmentSanity(theirLogCounter,
 
 	// Calculate the commitment fee, and subtract it from the initiator's
 	// balance.
-    commitFee := feePerKw.FeeForWeight(commitWeight)
-    commitFeeMsat := lnwire.NewMSatFromSatoshis(commitFee)
-    if lc.channelState.IsInitiator {
-        ourBalance -= commitFeeMsat
-    } else {
-        theirBalance -= commitFeeMsat
-    }
+	commitFee := feePerKw.FeeForWeight(commitWeight)
+	commitFeeMsat := lnwire.NewMSatFromSatoshis(commitFee)
+	if lc.channelState.IsInitiator {
+		ourBalance -= commitFeeMsat
+	} else {
+		theirBalance -= commitFeeMsat
+	}
 
 	// As a quick sanity check, we'll ensure that if we interpret the
 	// balances as signed integers, they haven't dipped down below zero. If
@@ -4378,7 +4394,7 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 				PaymentHash: pd.RHash,
 				Crafted:     pd.Crafted,
 				Timeout:     pd.SpiderTimeout,
-
+				Marked:      pd.Marked,
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
@@ -4389,6 +4405,7 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 				ChanID:          chanID,
 				ID:              pd.ParentIndex,
 				PaymentPreimage: pd.RPreimage,
+				Marked:          pd.Marked,
 			}
 			settleFailUpdates = append(settleFailUpdates, logUpdate)
 
@@ -4397,6 +4414,7 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 				ChanID: chanID,
 				ID:     pd.ParentIndex,
 				Reason: pd.FailReason,
+				Marked: pd.Marked,
 			}
 			settleFailUpdates = append(settleFailUpdates, logUpdate)
 
@@ -4406,6 +4424,7 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 				ID:           pd.ParentIndex,
 				ShaOnionBlob: pd.ShaOnionBlob,
 				FailureCode:  pd.FailCode,
+				Marked:       pd.Marked,
 			}
 			settleFailUpdates = append(settleFailUpdates, logUpdate)
 		}
@@ -4528,6 +4547,7 @@ func (lc *LightningChannel) AddHTLC(htlc *lnwire.UpdateAddHTLC,
 		OpenCircuitKey: openKey,
 		SpiderTimeout:  htlc.Timeout,
 		Crafted:        htlc.Crafted,
+		Marked:         htlc.Marked,
 	}
 
 	// Make sure adding this HTLC won't violate any of the constraints we
@@ -4558,15 +4578,16 @@ func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64, err
 	}
 
 	pd := &PaymentDescriptor{
-		EntryType: Add,
-		RHash:     PaymentHash(htlc.PaymentHash),
-		Timeout:   htlc.Expiry,
-		Amount:    htlc.Amount,
-		LogIndex:  lc.remoteUpdateLog.logIndex,
-		HtlcIndex: lc.remoteUpdateLog.htlcCounter,
-		OnionBlob: htlc.OnionBlob[:],
-		SpiderTimeout:  htlc.Timeout,
-		Crafted:        htlc.Crafted,
+		EntryType:     Add,
+		RHash:         PaymentHash(htlc.PaymentHash),
+		Timeout:       htlc.Expiry,
+		Amount:        htlc.Amount,
+		LogIndex:      lc.remoteUpdateLog.logIndex,
+		HtlcIndex:     lc.remoteUpdateLog.htlcCounter,
+		OnionBlob:     htlc.OnionBlob[:],
+		SpiderTimeout: htlc.Timeout,
+		Crafted:       htlc.Crafted,
+		Marked:        htlc.Marked,
 	}
 
 	lc.remoteUpdateLog.appendHtlc(pd)
@@ -4629,6 +4650,7 @@ func (lc *LightningChannel) SettleHTLC(preimage [32]byte,
 		SourceRef:        sourceRef,
 		DestRef:          destRef,
 		ClosedCircuitKey: closeKey,
+		Marked:           htlc.Marked,
 	}
 
 	lc.localUpdateLog.appendUpdate(pd)
@@ -4672,6 +4694,7 @@ func (lc *LightningChannel) ReceiveHTLCSettle(preimage [32]byte, htlcIndex uint6
 		RHash:       htlc.RHash,
 		LogIndex:    lc.remoteUpdateLog.logIndex,
 		EntryType:   Settle,
+		Marked:      htlc.Marked,
 	}
 
 	lc.remoteUpdateLog.appendUpdate(pd)
@@ -4735,6 +4758,7 @@ func (lc *LightningChannel) FailHTLC(htlcIndex uint64, reason []byte,
 		SourceRef:        sourceRef,
 		DestRef:          destRef,
 		ClosedCircuitKey: closeKey,
+		Marked:           htlc.Marked,
 	}
 
 	lc.localUpdateLog.appendUpdate(pd)
@@ -4784,6 +4808,7 @@ func (lc *LightningChannel) MalformedFailHTLC(htlcIndex uint64,
 		FailCode:     failCode,
 		ShaOnionBlob: shaOnionBlob,
 		SourceRef:    sourceRef,
+		Marked:       htlc.Marked,
 	}
 
 	lc.localUpdateLog.appendUpdate(pd)
@@ -4825,6 +4850,7 @@ func (lc *LightningChannel) ReceiveFailHTLC(htlcIndex uint64, reason []byte,
 		LogIndex:    lc.remoteUpdateLog.logIndex,
 		EntryType:   Fail,
 		FailReason:  reason,
+		Marked:      htlc.Marked,
 	}
 
 	lc.remoteUpdateLog.appendUpdate(pd)

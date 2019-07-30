@@ -1007,6 +1007,9 @@ type HTLC struct {
 	// from the HtlcIndex as this will be incremented for each new log
 	// update added.
 	LogIndex uint64
+
+	// whether the packet was marked for dctcp
+	Marked uint32
 }
 
 // SerializeHtlcs writes out the passed set of HTLC's into the passed writer
@@ -1024,7 +1027,7 @@ func SerializeHtlcs(b io.Writer, htlcs ...HTLC) error {
 		if err := WriteElements(b,
 			htlc.Signature, htlc.RHash, htlc.Amt, htlc.RefundTimeout,
 			htlc.OutputIndex, htlc.Incoming, htlc.OnionBlob[:],
-			htlc.HtlcIndex, htlc.LogIndex,
+			htlc.HtlcIndex, htlc.LogIndex, htlc.Marked,
 		); err != nil {
 			return err
 		}
@@ -1057,6 +1060,7 @@ func DeserializeHtlcs(r io.Reader) ([]HTLC, error) {
 			&htlcs[i].RefundTimeout, &htlcs[i].OutputIndex,
 			&htlcs[i].Incoming, &htlcs[i].OnionBlob,
 			&htlcs[i].HtlcIndex, &htlcs[i].LogIndex,
+			&htlcs[i].Marked,
 		); err != nil {
 			return htlcs, err
 		}
@@ -1072,6 +1076,7 @@ func (h *HTLC) Copy() HTLC {
 		Amt:           h.Amt,
 		RefundTimeout: h.RefundTimeout,
 		OutputIndex:   h.OutputIndex,
+		Marked:        h.Marked,
 	}
 	copy(clone.Signature[:], h.Signature)
 	copy(clone.RHash[:], h.RHash[:])

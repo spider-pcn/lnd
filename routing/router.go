@@ -2663,6 +2663,7 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			PaymentHash: payment.PaymentHash,
 			Crafted:     time.Now(),
 			Timeout:     time.Duration(5 * time.Second),
+			Marked:      1,
 		}
 		copy(htlcAdd.OnionBlob[:], onionBlob)
 
