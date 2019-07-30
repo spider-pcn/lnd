@@ -1335,6 +1335,8 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			return
 		}
 
+		l.errorf("Getting update htlc with marked: %v, packet is %v", htlc.Marked, pkt.marked)
+
 		if TIMEOUT {
 			// FIXME: decompose this stuff
 			now := time.Now()
@@ -1564,6 +1566,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			return
 		}
 
+		l.errorf("Getting update fulfill htlc with marked: %v, packet is :%v", htlc.Marked, pkt.marked)
 		// An HTLC we forward to the switch has just settled somewhere
 		// upstream. Therefore we settle the HTLC within the our local
 		// state machine.
@@ -1625,6 +1628,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			return
 		}
 
+		l.errorf("Getting update fail htlc with marked: %v, packet is%v", htlc.Marked, pkt.marked)
 		// An HTLC cancellation has been triggered somewhere upstream,
 		// we'll remove then HTLC from our local state machine.
 		inKey := pkt.inKey()
