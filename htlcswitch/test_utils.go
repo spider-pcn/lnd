@@ -709,7 +709,7 @@ func (n *threeHopNetwork) makePayment(sendingPeer, receivingPeer lnpeer.Peer,
 
 	// Send payment and expose err channel.
 	go func() {
-		_, err := sender.htlcSwitch.SendHTLC(
+		_, err, _ := sender.htlcSwitch.SendHTLC(
 			firstHop, htlc, newMockDeobfuscator(),
 		)
 		paymentErr <- err

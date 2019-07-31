@@ -194,6 +194,9 @@ type Route struct {
 	// within the route. With this map, we can easily look up the previous
 	// channel or node for pruning purposes.
 	prevHopMap map[Vertex]*ChannelHop
+
+	// marked whether to treat this route as marked for DCTCP
+	Marked uint32
 }
 
 // nextHopVertex returns the next hop (by Vertex) after the target node. If the

@@ -74,6 +74,7 @@ type pendingPayment struct {
 
 	preimage chan [sha256.Size]byte
 	err      chan error
+	marked   chan uint32
 
 	// deobfuscator is a serializable entity which is used if we received
 	// an error, it deobfuscates the onion failure blob, and extracts the
@@ -374,14 +375,16 @@ func (s *Switch) getSwitchKey() string {
 // package in order to send the htlc update.
 func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 	htlc *lnwire.UpdateAddHTLC,
-	deobfuscator ErrorDecrypter) ([sha256.Size]byte, error) {
+	deobfuscator ErrorDecrypter) ([sha256.Size]byte, error, uint32) {
+	var unmarked uint32
+	unmarked = 0
 
 	// Before sending, double check that we don't already have 1) an
 	// in-flight payment to this payment hash, or 2) a complete payment for
 	// the same hash.
 	if err := s.control.ClearForTakeoff(htlc); err != nil {
 		debug_print(fmt.Sprintf("clear for takeoff failed\n"))
-		return zeroPreimage, err
+		return zeroPreimage, err, unmarked
 	}
 
 	// Create payment and add to the map of payment in order later to be
@@ -392,12 +395,13 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 		paymentHash:  htlc.PaymentHash,
 		amount:       htlc.Amount,
 		deobfuscator: deobfuscator,
+		marked:       make(chan uint32, 1),
 	}
 
 	paymentID, err := s.paymentSequencer.NextID()
 	if err != nil {
 		debug_print(fmt.Sprintf("payement sequencer failed\n"))
-		return zeroPreimage, err
+		return zeroPreimage, err, unmarked
 	}
 
 	s.pendingMutex.Lock()
@@ -420,32 +424,44 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 		s.removePendingPayment(paymentID)
 		if err := s.control.Fail(htlc.PaymentHash); err != nil {
 			debug_print(fmt.Sprintf("in SendHTLC s.forward error1\n"))
-			return zeroPreimage, err
+			return zeroPreimage, err, packet.marked
 		}
 		debug_print(fmt.Sprintf("in SendHTLC s.forward error2\n"))
 
-		return zeroPreimage, err
+		return zeroPreimage, err, packet.marked
 	}
 
 	// Returns channels so that other subsystem might wait/skip the
 	// waiting of handling of payment.
 	var preimage [sha256.Size]byte
 
+	// returns whether this packet was marked by some router in between
+	// when the final result is obtained
+	var marked uint32
+
 	select {
 	case e := <-payment.err:
 		err = e
 	case <-s.quit:
-		return zeroPreimage, ErrSwitchExiting
+		return zeroPreimage, ErrSwitchExiting, marked
 	}
 
 	select {
 	case p := <-payment.preimage:
 		preimage = p
 	case <-s.quit:
-		return zeroPreimage, ErrSwitchExiting
+		return zeroPreimage, ErrSwitchExiting, marked
 	}
+
+	select {
+	case m := <-payment.marked:
+		marked = m
+	case <-s.quit:
+		return zeroPreimage, ErrSwitchExiting, marked
+	}
+
 	debug_print(fmt.Sprintf("returning from sendHTLC\n"))
-	return preimage, err
+	return preimage, err, marked
 }
 
 // UpdateForwardingPolicies sends a message to the switch to update the
@@ -930,6 +946,7 @@ func (s *Switch) handleLocalResponse(pkt *htlcPacket) {
 	var (
 		preimage   [32]byte
 		paymentErr error
+		marked     uint32
 	)
 
 	switch htlc := pkt.htlc.(type) {
@@ -948,6 +965,7 @@ func (s *Switch) handleLocalResponse(pkt *htlcPacket) {
 		}
 
 		preimage = htlc.PaymentPreimage
+		marked = htlc.Marked
 
 	// We've received a fail update which means we can finalize the user
 	// payment and return fail response.
@@ -963,6 +981,7 @@ func (s *Switch) handleLocalResponse(pkt *htlcPacket) {
 		}
 
 		paymentErr = s.parseFailedPayment(payment, pkt, htlc)
+		marked = htlc.Marked
 
 	default:
 		log.Warnf("Received unknown response type: %T", pkt.htlc)
@@ -975,6 +994,7 @@ func (s *Switch) handleLocalResponse(pkt *htlcPacket) {
 		debug_print("payment != nil, in switch.go\n")
 		payment.err <- paymentErr
 		payment.preimage <- preimage
+		payment.marked <- marked
 		s.removePendingPayment(pkt.incomingHTLCID)
 	}
 }

@@ -502,7 +502,7 @@ func newServer(listenAddrs []net.Addr, chanDB *channeldb.DB, cc *chainControl,
 		ChainView: cc.chainView,
 		SendToSwitch: func(firstHop lnwire.ShortChannelID,
 			htlcAdd *lnwire.UpdateAddHTLC,
-			circuit *sphinx.Circuit) ([32]byte, error) {
+			circuit *sphinx.Circuit) ([32]byte, error, uint32) {
 
 			// Using the created circuit, initialize the error
 			// decrypter so we can parse+decode any failures
@@ -515,10 +515,10 @@ func newServer(listenAddrs []net.Addr, chanDB *channeldb.DB, cc *chainControl,
 				firstHop, htlcAdd, errorDecryptor,
 			)
 		},
-		SendProbeToFirstHop: s.RespondToProbeInProgress,
+		SendProbeToFirstHop:   s.RespondToProbeInProgress,
 		SendProbeToFirstHopLP: s.RespondToProbeInProgressLP,
-		ChannelPruneExpiry:  time.Duration(time.Hour * 24 * 14),
-		GraphPruneInterval:  time.Duration(time.Hour),
+		ChannelPruneExpiry:    time.Duration(time.Hour * 24 * 14),
+		GraphPruneInterval:    time.Duration(time.Hour),
 		QueryBandwidth: func(edge *channeldb.ChannelEdgeInfo) lnwire.MilliSatoshi {
 			// If we aren't on either side of this edge, then we'll
 			// just thread through the capacity of the edge as we

@@ -187,9 +187,11 @@ type Config struct {
 	// forward a fully encoded payment to the first hop in the route
 	// denoted by its public key. A non-nil error is to be returned if the
 	// payment was unsuccessful.
+	// if a prespecified route was taken, also tells you if that route is
+	// marked or not - relevant only for DCTCP
 	SendToSwitch func(firstHop lnwire.ShortChannelID,
 		htlcAdd *lnwire.UpdateAddHTLC,
-		circuit *sphinx.Circuit) ([sha256.Size]byte, error)
+		circuit *sphinx.Circuit) ([sha256.Size]byte, error, uint32)
 
 	// SendProbeToFirstHop is a function that sends the probe to
 	// the first hop in the route to be probed after filling out the
@@ -1762,7 +1764,7 @@ func (r *ChannelRouter) SendPayment(payment *LightningPayment) ([32]byte, *Route
 	if err != nil {
 		return [32]byte{}, nil, err
 	}
-	result, route, err := r.sendPayment(payment, paySession)
+	result, route, err, _ := r.sendPayment(payment, paySession)
 	return result, route, err
 }
 
@@ -1774,7 +1776,7 @@ func (r *ChannelRouter) SendPayment(payment *LightningPayment) ([32]byte, *Route
 // path the successful payment traversed within the network to reach the
 // destination. Additionally, the payment preimage will also be returned.
 func (r *ChannelRouter) SendToRoute(routes []*Route,
-	payment *LightningPayment) ([32]byte, *Route, error) {
+	payment *LightningPayment) ([32]byte, *Route, error, uint32) {
 	paySession := r.missionControl.NewPaymentSessionFromRoutes(
 		routes,
 	)
@@ -1833,7 +1835,8 @@ func (r *ChannelRouter) SendSpider(payment *LightningPayment, spiderAlgo int) ([
 		}
 
 		// call SendToRoute to actually send the payment
-		return r.SendToRoute([]*Route{route}, payment)
+		preImage, route, err, _ := r.SendToRoute([]*Route{route}, payment)
+		return preImage, route, err
 
 	case Waterfilling:
 		// route payments according to waterfilling.
@@ -2049,7 +2052,7 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 					// will be dispatched here. so we want them to be sent in
 					// parallel.
 					go func(route *Route, payment SpiderPayment) {
-						preImage, route, err := r.SendToRoute([]*Route{route}, payment.payment)
+						preImage, route, err, _ := r.SendToRoute([]*Route{route}, payment.payment)
 
 						// return result through the channel
 						result := SpiderPaymentResult{
@@ -2090,7 +2093,7 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 
 // handleDCTCPPaymentToDest handles a given payment to a destination for DCTCP
 // It manages the finding of paths and figuring out which path to send the payment on
-// if it can be sent out and then calls sendPaymentOnPath to do the actual sending
+// if it can be sent out and then calls sendDCTCPPaymentOnPath to do the actual sending
 func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPayment) {
 	// first, get the LPPayment queue from missionControl
 	r.missionControl.paymentQueueMutex.Lock()
@@ -2155,7 +2158,7 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 					payment.payment.Amount, pathInfo.inFlight, pathInfo.window)
 				pathInfo.inFlightMutex.Unlock()
 
-				go r.sendPaymentOnPath(pathInfo, payment, dest, i)
+				go r.sendDCTCPPaymentOnPath(pathInfo, payment, dest, i)
 				return
 			}
 			pathInfo.inFlightMutex.Unlock()
@@ -2208,10 +2211,10 @@ func (r *ChannelRouter) periodicLogging() {
 // helper function that sends a given payment on the specified path to the
 // specified destination. Sends the result back to the calling application
 // and then also sends out new payments on this path if possible
-func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment SpiderPayment, dest Vertex, pathID int) {
-	preImage, route, err := r.SendToRoute([]*Route{pathInfo.route}, payment.payment)
+func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, payment SpiderPayment, dest Vertex, pathID int) {
+	preImage, route, err, marked := r.SendToRoute([]*Route{pathInfo.route}, payment.payment)
 
-	log.Errorf("sending single DCTCP payment to %f", dest)
+	log.Errorf("sending single DCTCP payment to %f, came back %v", dest, marked)
 	// return result through the channel
 	result := SpiderPaymentResult{
 		preImage: preImage,
@@ -2246,7 +2249,7 @@ func (r *ChannelRouter) sendPaymentOnPath(pathInfo *SpiderRouteInfo, payment Spi
 				nextPayment.payment.Amount, pathInfo.inFlight, pathInfo.window)
 			pathInfo.inFlightMutex.Unlock()
 
-			go r.sendPaymentOnPath(pathInfo, nextPayment, dest, pathID)
+			go r.sendDCTCPPaymentOnPath(pathInfo, nextPayment, dest, pathID)
 			return
 		}
 	}
@@ -2348,7 +2351,7 @@ func (r *ChannelRouter) sendPaymentAsPerWaterfilling(routesAndBalances []RouteIn
 	// TODO:i send on multiple paths - each in a separate goroutine and keep collecting
 	// the results
 	log.Debugf("Selected WF route is %v\n", maxRouteEntry.route)
-	preImage, route, err := r.SendToRoute([]*Route{maxRouteEntry.route}, payment)
+	preImage, route, err, _ := r.SendToRoute([]*Route{maxRouteEntry.route}, payment)
 
 	if err == nil {
 		// TODO (vibhaa):
@@ -2551,8 +2554,11 @@ func (r *ChannelRouter) getKShortestPaths(dest Vertex, payment *LightningPayment
 // will be returned which describes the path the successful payment traversed
 // within the network to reach the destination. Additionally, the payment
 // preimage will also be returned.
+// also returns whether the route attempted was marked
+// cnanot be interpreted as anything unless claling function was sendToRoute
+// because otherwise route could have been anything unless also returned
 func (r *ChannelRouter) sendPayment(payment *LightningPayment,
-	paySession *paymentSession) ([32]byte, *Route, error) {
+	paySession *paymentSession) ([32]byte, *Route, error, uint32) {
 
 	dest := NewVertex(payment.Target)
 	log.Errorf("Spider: info_type: payment_attempted, time: %d, sender: %v, dest: %v",
@@ -2578,6 +2584,7 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 	var (
 		preImage  [32]byte
 		sendError error
+		marked    uint32
 	)
 
 	// errFailedFeeChans is a map of the short channel ID's that were the
@@ -2590,7 +2597,7 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 	// calculate the required HTLC time locks within the route.
 	_, currentHeight, err := r.cfg.Chain.GetBestBlock()
 	if err != nil {
-		return [32]byte{}, nil, err
+		return [32]byte{}, nil, err, marked
 	}
 
 	var finalCLTVDelta uint16
@@ -2620,13 +2627,15 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 		case <-timeoutChan:
 			errStr := fmt.Sprintf("payment attempt not completed "+
 				"before timeout of %v", payAttemptTimeout)
+			// because payment took too long
+			marked = 1
 
 			return preImage, nil, newErr(
 				ErrPaymentAttemptTimeout, errStr,
-			)
+			), marked
 
 		case <-r.quit:
-			return preImage, nil, fmt.Errorf("router shutting down")
+			return preImage, nil, fmt.Errorf("router shutting down"), marked
 
 		default:
 			// Fall through if we haven't hit our time limit, or
@@ -2642,10 +2651,10 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			if sendError != nil {
 				return [32]byte{}, nil, fmt.Errorf("unable to "+
 					"route payment to destination: %v",
-					sendError)
+					sendError), marked
 			}
 
-			return preImage, nil, err
+			return preImage, nil, err, marked
 		}
 
 		log.Tracef("Attempting to send payment %x, using route: %v",
@@ -2661,7 +2670,7 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			route, payment.PaymentHash[:],
 		)
 		if err != nil {
-			return preImage, nil, err
+			return preImage, nil, err, marked
 		}
 
 		// Craft an HTLC packet to send to the layer 2 switch. The
@@ -2683,7 +2692,7 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 		firstHop := lnwire.NewShortChanIDFromInt(
 			route.Hops[0].Channel.ChannelID,
 		)
-		preImage, sendError = r.cfg.SendToSwitch(
+		preImage, sendError, marked = r.cfg.SendToSwitch(
 			firstHop, htlcAdd, circuit,
 		)
 		if sendError != nil {
@@ -2696,7 +2705,7 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 
 			fErr, ok := sendError.(*htlcswitch.ForwardingError)
 			if !ok {
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 			}
 
 			errSource := fErr.ErrorSource
@@ -2709,22 +2718,22 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			// If the end destination didn't know they payment
 			// hash, then we'll terminate immediately.
 			case *lnwire.FailUnknownPaymentHash:
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 
 				// If we sent the wrong amount to the destination, then
 				// we'll exit early.
 			case *lnwire.FailIncorrectPaymentAmount:
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 
 				// If the time-lock that was extended to the final node
 				// was incorrect, then we can't proceed.
 			case *lnwire.FailFinalIncorrectCltvExpiry:
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 
 				// If we crafted an invalid onion payload for the final
 				// node, then we'll exit early.
 			case *lnwire.FailFinalIncorrectHtlcAmount:
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 
 				// Similarly, if the HTLC expiry that we extended to
 				// the final hop expires too soon, then will fail the
@@ -2733,12 +2742,12 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 				// TODO(roasbeef): can happen to to race condition, try
 				// again with recent block height
 			case *lnwire.FailFinalExpiryTooSoon:
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 
 				// If we erroneously attempted to cross a chain border,
 				// then we'll cancel the payment.
 			case *lnwire.FailInvalidRealm:
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 
 				// If we get a notice that the expiry was too soon for
 				// an intermediate node, then we'll prune out the node
@@ -2761,11 +2770,11 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 				// an invalid version, then we'll exit early as this
 				// shouldn't happen in the typical case.
 			case *lnwire.FailInvalidOnionVersion:
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 			case *lnwire.FailInvalidOnionHmac:
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 			case *lnwire.FailInvalidOnionKey:
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 
 				// If the onion error includes a channel update, and
 				// isn't necessarily fatal, then we'll apply the update
@@ -2778,7 +2787,7 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 						"update for onion error: %v", err)
 				}
 
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 
 				// If we get a failure due to a fee, so we'll apply the
 				// new fee update, and retry our attempt using the
@@ -2910,7 +2919,7 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 				continue
 
 			default:
-				return preImage, nil, sendError
+				return preImage, nil, sendError, marked
 			}
 		}
 
@@ -2919,7 +2928,7 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			int32(time.Now().Unix()), r.nodeName, dest)
 		log.Errorf("Spider: info_type: payment_result"+
 			"result: %v, route: %v, err: %v", preImage, route)
-		return preImage, route, nil
+		return preImage, route, nil, marked
 	}
 }
 
