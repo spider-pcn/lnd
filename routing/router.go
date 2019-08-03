@@ -1997,7 +1997,8 @@ type SpiderRouteInfo struct {
 	inFlight      lnwire.MilliSatoshi // amount in flight
 	markedPackets float64
 	totalPackets  float64
-	inFlightMutex *sync.Mutex
+	statsMutex    *sync.Mutex
+	dataMutex     *sync.Mutex
 	waitTime      float64
 }
 
@@ -2017,13 +2018,14 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 
 	path := SpiderRouteInfo{
 		// we set the path to be ready when we init the path
-		route:         route,
-		ready:         time.NewTimer(0),
-		acceptor:      make(chan SpiderPayment),
-		window:        pathWindowSize,
-		inFlight:      0,
-		inFlightMutex: &sync.Mutex{},
-		rate:          2,
+		route:      route,
+		ready:      time.NewTimer(0),
+		acceptor:   make(chan SpiderPayment),
+		window:     pathWindowSize,
+		inFlight:   0,
+		dataMutex:  &sync.Mutex{},
+		statsMutex: &sync.Mutex{},
+		rate:       2,
 	}
 
 	go func() {
@@ -2033,9 +2035,9 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 			case <-path.ready.C:
 				// check the window size and in-flight amount
 				// if the latter is larget than the former, just skip this chance
-				path.inFlightMutex.Lock()
+				path.dataMutex.Lock()
 				currentInFlight := path.inFlight
-				path.inFlightMutex.Unlock()
+				path.dataMutex.Unlock()
 
 				if currentInFlight < path.window {
 					// If timer fires, tell the handleLPPaymentToDest
@@ -2063,15 +2065,15 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 						payment.result <- result
 
 						// substract this txn from the inflight amt
-						path.inFlightMutex.Lock()
+						path.dataMutex.Lock()
 						path.inFlight = path.inFlight - payment.payment.Amount
-						path.inFlightMutex.Unlock()
+						path.dataMutex.Unlock()
 					}(path.route, payment)
 
 					// add this txn to the inflight amount
-					path.inFlightMutex.Lock()
+					path.dataMutex.Lock()
 					path.inFlight = path.inFlight + payment.payment.Amount
-					path.inFlightMutex.Unlock()
+					path.dataMutex.Unlock()
 
 					waitTime := 1.0 / path.rate
 					waitMicrosecond := waitTime * 1000000
@@ -2131,13 +2133,14 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 			// start path handler and add to paths
 			path := &SpiderRouteInfo{
 				// we set the path to be ready when we init the path
-				route:         shortPath,
-				ready:         nil,
-				acceptor:      nil,
-				window:        lnwire.MilliSatoshi(defaultWindowSize),
-				inFlight:      0,
-				inFlightMutex: &sync.Mutex{},
-				rate:          0,
+				route:      shortPath,
+				ready:      nil,
+				acceptor:   nil,
+				window:     lnwire.MilliSatoshi(defaultWindowSize),
+				inFlight:   0,
+				dataMutex:  &sync.Mutex{},
+				statsMutex: &sync.Mutex{},
+				rate:       0,
 			}
 			paths = append(paths, path)
 		}
@@ -2146,7 +2149,7 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 	// send if queue is empty otherwise drop it
 	if q.Length() == 0 {
 		for i, pathInfo := range paths {
-			pathInfo.inFlightMutex.Lock()
+			pathInfo.dataMutex.Lock()
 			log.Errorf("ALPHA: %f, BETA: %f, before initiating  a new payment: %f inflight: %f, window : %f",
 				ALPHA, BETA,
 				payment.payment.Amount, pathInfo.inFlight, pathInfo.window)
@@ -2156,12 +2159,12 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 				log.Errorf("ALPHA: %f, BETA: %f, initiating  a new payment: %f inflight: %f, window : %f",
 					ALPHA, BETA,
 					payment.payment.Amount, pathInfo.inFlight, pathInfo.window)
-				pathInfo.inFlightMutex.Unlock()
+				pathInfo.dataMutex.Unlock()
 
 				go r.sendDCTCPPaymentOnPath(pathInfo, payment, dest, i)
 				return
 			}
-			pathInfo.inFlightMutex.Unlock()
+			pathInfo.dataMutex.Unlock()
 		}
 	} else {
 		if q.Length() < maxSenderQueueSize {
@@ -2194,6 +2197,7 @@ func (r *ChannelRouter) periodicLogging() {
 
 		for dest, allPathInfo := range r.missionControl.SpiderRouteInfoPerDest {
 			for i, pathInfo := range *allPathInfo {
+				pathInfo.statsMutex.Lock()
 				log.Errorf("DCTCP Spider: info_type: window_size,"+
 					"sender: %s, dest: %v, pathID: %d, inflight: %v, window: %v,"+
 					"fractionMarked: %v, time: %v",
@@ -2202,6 +2206,7 @@ func (r *ChannelRouter) periodicLogging() {
 					int32(time.Now().Unix()))
 				pathInfo.markedPackets = 0
 				pathInfo.totalPackets = 0
+				pathInfo.statsMutex.Unlock()
 			}
 		}
 		time.Sleep(time.Duration(STATS_INTERVAL) * time.Millisecond)
@@ -2215,6 +2220,14 @@ func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, paymen
 	preImage, route, err, marked := r.SendToRoute([]*Route{pathInfo.route}, payment.payment)
 
 	log.Errorf("sending single DCTCP payment to %f, came back %v", dest, marked)
+	// update the stats
+	pathInfo.statsMutex.Lock()
+	if marked == 1 {
+		pathInfo.markedPackets += 1
+	}
+	pathInfo.totalPackets += 1
+	pathInfo.statsMutex.Unlock()
+
 	// return result through the channel
 	result := SpiderPaymentResult{
 		preImage: preImage,
@@ -2229,7 +2242,7 @@ func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, paymen
 	r.missionControl.paymentQueueMutex.Unlock()
 
 	// substract this txn from the inflight amt
-	pathInfo.inFlightMutex.Lock()
+	pathInfo.dataMutex.Lock()
 	pathInfo.inFlight = pathInfo.inFlight - payment.payment.Amount
 
 	if errAlpha != nil || errBeta != nil {
@@ -2247,13 +2260,13 @@ func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, paymen
 			q.Pop()
 			log.Errorf("ALPHA: %f, BETA: %f, initiating  a new payment: %f inflight: %f, window : %f", ALPHA, BETA,
 				nextPayment.payment.Amount, pathInfo.inFlight, pathInfo.window)
-			pathInfo.inFlightMutex.Unlock()
+			pathInfo.dataMutex.Unlock()
 
 			go r.sendDCTCPPaymentOnPath(pathInfo, nextPayment, dest, pathID)
 			return
 		}
 	}
-	pathInfo.inFlightMutex.Unlock()
+	pathInfo.dataMutex.Unlock()
 }
 
 // handleLPPaymentToDest handles everything related to LP payments to the dest
@@ -2682,7 +2695,7 @@ func (r *ChannelRouter) sendPayment(payment *LightningPayment,
 			PaymentHash: payment.PaymentHash,
 			Crafted:     time.Now(),
 			Timeout:     time.Duration(5 * time.Second),
-			Marked:      1,
+			Marked:      0,
 		}
 		copy(htlcAdd.OnionBlob[:], onionBlob)
 
