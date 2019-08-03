@@ -1343,7 +1343,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 
 		// mark the packet if the queueing delay is too long
 		_, ok := pkt.htlc.(*lnwire.UpdateAddHTLC)
-		if ok && isReProcess {
+		if ok && isReProcess && SPIDER_FLAG {
 			serviceTime := time.Now()
 			arrivalTime := pkt.arrivalTime
 			diff := serviceTime.Sub(arrivalTime)
@@ -1352,7 +1352,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 				pkt.marked = 1
 				pkt.htlc.(*lnwire.UpdateAddHTLC).Marked = 1
 			}
-		} else if ok && !isReProcess {
+		} else if ok && !isReProcess && SPIDER_FLAG {
 			pkt.arrivalTime = time.Now()
 		}
 
