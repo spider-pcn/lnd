@@ -187,6 +187,10 @@ func (p *packetQueue) packetCoordinator() {
 // of the existing items.
 func (p *packetQueue) AddPkt(pkt *htlcPacket) {
 	debug_print("add pkt to the queue!!")
+
+	// note the time it first arrives at the queue
+	pkt.arrivalTime = time.Now()
+
 	// First, we'll lock the condition, and add the message to the end of
 	// the message queue, and increment the internal atomic for tracking
 	// the queue's length.

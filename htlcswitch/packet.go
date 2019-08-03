@@ -3,6 +3,7 @@ package htlcswitch
 import (
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"time"
 )
 
 // htlcPacket is a wrapper around htlc lnwire update, which adds additional
@@ -54,6 +55,10 @@ type htlcPacket struct {
 
 	// whether the htlc was marked within this packet
 	marked uint32
+
+	// arrival time of the htlc - time at which the packet arrived at this switch
+	// local and only used to mark packets for DCTCP
+	arrivalTime time.Time
 
 	// obfuscator contains the necessary state to allow the switch to wrap
 	// any forwarded errors in an additional layer of encryption.

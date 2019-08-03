@@ -50,6 +50,9 @@ const (
 	// DefaultMaxLinkFeeUpdateTimeout represents the maximum interval in
 	// which a link should propose to update its commitment fee rate.
 	DefaultMaxLinkFeeUpdateTimeout = 60 * time.Minute
+
+	// queue delay threshold for DCTCP
+	DefaultQueueDelayThreshold = 300 * time.Millisecond
 )
 
 // ForwardingPolicy describes the set of constraints that a given ChannelLink
@@ -1335,7 +1338,25 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			return
 		}
 
-		l.errorf("Getting update htlc with marked: %v, packet is %v", htlc.Marked, pkt.marked)
+		l.errorf("Getting update htlc, before checking queue delay with marked: %v, packet is %v",
+			htlc.Marked, pkt.marked)
+
+		// mark the packet if the queueing delay is too long
+		_, ok := pkt.htlc.(*lnwire.UpdateAddHTLC)
+		if ok && isReProcess {
+			serviceTime := time.Now()
+			arrivalTime := pkt.arrivalTime
+			diff := serviceTime.Sub(arrivalTime)
+
+			if diff > DefaultQueueDelayThreshold {
+				pkt.marked = 1
+				pkt.htlc.(*lnwire.UpdateAddHTLC).Marked = 1
+			}
+		} else if ok && !isReProcess {
+			pkt.arrivalTime = time.Now()
+		}
+
+		l.errorf("After trying to mark update htlc marked: %v, packet is %v", htlc.Marked, pkt.marked)
 
 		if TIMEOUT {
 			// FIXME: decompose this stuff
