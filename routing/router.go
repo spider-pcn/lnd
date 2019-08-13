@@ -49,6 +49,9 @@ const (
 
 	// initial window size
 	defaultWindowSize = 200000
+
+	// alpha beta multiplication factor
+	defaultMultiplicationFactor = 200000
 )
 
 var useWindows bool = os.Getenv("SPIDER_USE_WINDOWS") == "1"
@@ -2216,7 +2219,8 @@ func (r *ChannelRouter) periodicLogging() {
 // helper function that sends a given payment on the specified path to the
 // specified destination. Sends the result back to the calling application
 // and then also sends out new payments on this path if possible
-func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, payment SpiderPayment, dest Vertex, pathID int) {
+func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, payment SpiderPayment,
+	dest Vertex, pathID int) {
 	preImage, route, err, marked := r.SendToRoute([]*Route{pathInfo.route}, payment.payment)
 
 	log.Errorf("sending single DCTCP payment to %f, came back %v", dest, marked)
@@ -2241,6 +2245,13 @@ func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, paymen
 	q := r.missionControl.paymentQueuePerDest[dest]
 	r.missionControl.paymentQueueMutex.Unlock()
 
+	// get the sum of windows across all paths
+	sumWindows := 0.0
+	for _, pathInfo := range *r.missionControl.SpiderRouteInfoPerDest[dest] {
+		// only read so not making it thread safe
+		sumWindows += float64(pathInfo.window)
+	}
+
 	// substract this txn from the inflight amt
 	pathInfo.dataMutex.Lock()
 	pathInfo.inFlight = pathInfo.inFlight - payment.payment.Amount
@@ -2249,11 +2260,21 @@ func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, paymen
 		ALPHA = 0.5
 		BETA = 0.2
 	}
+
+	// update window based on marking
+	if marked == 1 {
+		newWindow := float64(pathInfo.window) - BETA*defaultMultiplicationFactor
+		pathInfo.window = lnwire.MilliSatoshi(math.Max(float64(defaultWindowSize), newWindow))
+	} else {
+		pathInfo.window = pathInfo.window +
+			lnwire.MilliSatoshi(ALPHA*defaultMultiplicationFactor/sumWindows)
+	}
+
 	log.Errorf("ALPHA: %f, BETA: %f, finished a payment : %f inflight: %f, window : %f", ALPHA, BETA, payment.payment.Amount,
 		pathInfo.inFlight, pathInfo.window)
 
 	// send out more txns on this route if possible
-	if q.Length() > 0 {
+	for q.Length() > 0 {
 		nextPayment := q.Front().(SpiderPayment)
 		if pathInfo.inFlight+nextPayment.payment.Amount <= pathInfo.window {
 			pathInfo.inFlight = pathInfo.inFlight + nextPayment.payment.Amount
@@ -2264,6 +2285,8 @@ func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, paymen
 
 			go r.sendDCTCPPaymentOnPath(pathInfo, nextPayment, dest, pathID)
 			return
+		} else {
+			break
 		}
 	}
 	pathInfo.dataMutex.Unlock()
