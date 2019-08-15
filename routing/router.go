@@ -2265,9 +2265,11 @@ func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, paymen
 	if marked == 1 {
 		newWindow := float64(pathInfo.window) - BETA*defaultMultiplicationFactor
 		pathInfo.window = lnwire.MilliSatoshi(math.Max(float64(defaultWindowSize), newWindow))
+		log.Errorf("decrementing window by %f", BETA*defaultMultiplicationFactor)
 	} else {
 		pathInfo.window = pathInfo.window +
 			lnwire.MilliSatoshi(ALPHA*defaultMultiplicationFactor/sumWindows)
+		log.Errorf("incrementing window by %f", ALPHA*defaultMultiplicationFactor/sumWindows)
 	}
 
 	log.Errorf("ALPHA: %f, BETA: %f, finished a payment : %f inflight: %f, window : %f", ALPHA, BETA, payment.payment.Amount,
