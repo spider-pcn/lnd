@@ -48,10 +48,13 @@ const (
 	maxSenderQueueSize = 20
 
 	// initial window size
-	defaultWindowSize = 200000
+	defaultWindowSize = 1
 
 	// alpha beta multiplication factor
 	defaultMultiplicationFactor = 200000
+
+	// temp payment amount proxy, count in units of 200SAT payments
+	tempPaymentAmount = 1
 )
 
 var useWindows bool = os.Getenv("SPIDER_USE_WINDOWS") == "1"
@@ -1996,8 +1999,8 @@ type SpiderRouteInfo struct {
 	rate          float64     // txn per second
 	ready         *time.Timer // timer indicating this path is ready
 	acceptor      chan SpiderPayment
-	window        lnwire.MilliSatoshi // window size
-	inFlight      lnwire.MilliSatoshi // amount in flight
+	window        float64 // window size
+	inFlight      int     // amount in flight
 	markedPackets float64
 	totalPackets  float64
 	statsMutex    *sync.Mutex
@@ -2014,7 +2017,7 @@ type SpiderRouteInfo struct {
 // handleLPPaymentToDest goroutine, expecting that goroutine will supply
 // a payment request to our "acceptor".
 func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, notifier chan SpiderRouteInfo) *SpiderRouteInfo {
-	pathWindowSize := lnwire.MilliSatoshi(defaultWindowSize)
+	pathWindowSize := defaultWindowSize
 	if !useWindows {
 		pathWindowSize = 1000000000000
 	}
@@ -2024,7 +2027,7 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 		route:      route,
 		ready:      time.NewTimer(0),
 		acceptor:   make(chan SpiderPayment),
-		window:     pathWindowSize,
+		window:     float64(pathWindowSize),
 		inFlight:   0,
 		dataMutex:  &sync.Mutex{},
 		statsMutex: &sync.Mutex{},
@@ -2042,7 +2045,7 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 				currentInFlight := path.inFlight
 				path.dataMutex.Unlock()
 
-				if currentInFlight < path.window {
+				if currentInFlight < int(path.window) {
 					// If timer fires, tell the handleLPPaymentToDest
 					// goroutine that we are ready for the next txn
 					// Note that it may block, since the size of notifier
@@ -2069,13 +2072,13 @@ func (r *ChannelRouter) startLPRoute(dest Vertex, route *Route, pathID uint32, n
 
 						// substract this txn from the inflight amt
 						path.dataMutex.Lock()
-						path.inFlight = path.inFlight - payment.payment.Amount
+						path.inFlight = path.inFlight - tempPaymentAmount
 						path.dataMutex.Unlock()
 					}(path.route, payment)
 
 					// add this txn to the inflight amount
 					path.dataMutex.Lock()
-					path.inFlight = path.inFlight + payment.payment.Amount
+					path.inFlight = path.inFlight + tempPaymentAmount
 					path.dataMutex.Unlock()
 
 					waitTime := 1.0 / path.rate
@@ -2139,7 +2142,7 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 				route:      shortPath,
 				ready:      nil,
 				acceptor:   nil,
-				window:     lnwire.MilliSatoshi(defaultWindowSize),
+				window:     defaultWindowSize,
 				inFlight:   0,
 				dataMutex:  &sync.Mutex{},
 				statsMutex: &sync.Mutex{},
@@ -2156,9 +2159,9 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 			log.Errorf("ALPHA: %f, BETA: %f, before initiating  a new payment: %f inflight: %f, window : %f",
 				ALPHA, BETA,
 				payment.payment.Amount, pathInfo.inFlight, pathInfo.window)
-			if pathInfo.inFlight+payment.payment.Amount <= pathInfo.window {
+			if pathInfo.inFlight+tempPaymentAmount <= int(pathInfo.window) {
 				// update inflight
-				pathInfo.inFlight = pathInfo.inFlight + payment.payment.Amount
+				pathInfo.inFlight = pathInfo.inFlight + tempPaymentAmount
 				log.Errorf("ALPHA: %f, BETA: %f, initiating  a new payment: %f inflight: %f, window : %f",
 					ALPHA, BETA,
 					payment.payment.Amount, pathInfo.inFlight, pathInfo.window)
@@ -2254,22 +2257,21 @@ func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, paymen
 
 	// substract this txn from the inflight amt
 	pathInfo.dataMutex.Lock()
-	pathInfo.inFlight = pathInfo.inFlight - payment.payment.Amount
+	pathInfo.inFlight = pathInfo.inFlight - tempPaymentAmount
 
 	if errAlpha != nil || errBeta != nil {
-		ALPHA = 0.5
-		BETA = 0.2
+		ALPHA = 10
+		BETA = 0.1
 	}
 
 	// update window based on marking
 	if marked == 1 {
-		newWindow := float64(pathInfo.window) - BETA*defaultMultiplicationFactor
-		pathInfo.window = lnwire.MilliSatoshi(math.Max(float64(defaultWindowSize), newWindow))
+		newWindow := pathInfo.window - BETA
+		pathInfo.window = math.Max(float64(defaultWindowSize), newWindow)
 		log.Errorf("decrementing window by %f", BETA*defaultMultiplicationFactor)
 	} else {
-		pathInfo.window = pathInfo.window +
-			lnwire.MilliSatoshi(ALPHA*defaultMultiplicationFactor/sumWindows)
-		log.Errorf("incrementing window by %f", ALPHA*defaultMultiplicationFactor/sumWindows)
+		pathInfo.window = pathInfo.window + ALPHA/sumWindows
+		log.Errorf("incrementing window by %f", ALPHA/sumWindows)
 	}
 
 	log.Errorf("ALPHA: %f, BETA: %f, finished a payment : %f inflight: %f, window : %f", ALPHA, BETA, payment.payment.Amount,
@@ -2278,8 +2280,8 @@ func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, paymen
 	// send out more txns on this route if possible
 	for q.Length() > 0 {
 		nextPayment := q.Front().(SpiderPayment)
-		if pathInfo.inFlight+nextPayment.payment.Amount <= pathInfo.window {
-			pathInfo.inFlight = pathInfo.inFlight + nextPayment.payment.Amount
+		if pathInfo.inFlight+tempPaymentAmount <= int(pathInfo.window) {
+			pathInfo.inFlight = pathInfo.inFlight + tempPaymentAmount
 			q.Pop()
 			log.Errorf("ALPHA: %f, BETA: %f, initiating  a new payment: %f inflight: %f, window : %f", ALPHA, BETA,
 				nextPayment.payment.Amount, pathInfo.inFlight, pathInfo.window)

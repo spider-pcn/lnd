@@ -52,7 +52,7 @@ const (
 	DefaultMaxLinkFeeUpdateTimeout = 60 * time.Minute
 
 	// queue delay threshold for DCTCP
-	DefaultQueueDelayThreshold = 300 * time.Millisecond
+	DefaultQueueDelayThreshold = 50 * time.Millisecond
 )
 
 // ForwardingPolicy describes the set of constraints that a given ChannelLink
