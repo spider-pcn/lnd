@@ -1348,15 +1348,18 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			arrivalTime := pkt.arrivalTime
 			diff := serviceTime.Sub(arrivalTime)
 
+			l.errorf("queueing delay experienced when reprocessing %v", diff)
 			if diff > DefaultQueueDelayThreshold {
 				pkt.marked = 1
 				pkt.htlc.(*lnwire.UpdateAddHTLC).Marked = 1
 			}
 		} else if ok && !isReProcess && SPIDER_FLAG {
+			l.errorf("no queueing delay experienced when reprocessing")
 			pkt.arrivalTime = time.Now()
 		}
 
-		l.errorf("After trying to mark update htlc marked: %v, packet is %v", htlc.Marked, pkt.marked)
+		l.errorf("After trying to mark update htlc marked: %v, packet is %v, reprocessed is %v",
+			htlc.Marked, pkt.marked, isReProcess)
 
 		if TIMEOUT {
 			// FIXME: decompose this stuff
