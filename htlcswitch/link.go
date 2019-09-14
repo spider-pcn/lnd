@@ -1601,6 +1601,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			pkt.sourceRef,
 			pkt.destRef,
 			&inKey,
+			htlc.Marked,
 		)
 		if err != nil {
 			l.errorf("unable to settle incoming HTLC for "+
@@ -1662,6 +1663,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			pkt.sourceRef,
 			pkt.destRef,
 			&inKey,
+			htlc.Marked,
 		)
 		if err != nil {
 			l.errorf("unable to cancel incoming HTLC for "+
@@ -1868,7 +1870,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		debug_print(fmt.Sprintf("UpdateFulfillHTLC in chan: %s\n", l.shortChanID))
 		pre := msg.PaymentPreimage
 		idx := msg.ID
-		if err := l.channel.ReceiveHTLCSettle(pre, idx); err != nil {
+		if err := l.channel.ReceiveHTLCSettle(pre, idx, msg.Marked); err != nil {
 			l.fail(
 				LinkFailureError{
 					code:       ErrInvalidUpdate,
@@ -1927,7 +1929,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		// If remote side have been unable to parse the onion blob we
 		// have sent to it, than we should transform the malformed HTLC
 		// message to the usual HTLC fail message.
-		err := l.channel.ReceiveFailHTLC(msg.ID, b.Bytes())
+		err := l.channel.ReceiveFailHTLC(msg.ID, b.Bytes(), msg.Marked)
 		if err != nil {
 			l.fail(LinkFailureError{code: ErrInvalidUpdate},
 				"unable to handle upstream fail HTLC: %v", err)
@@ -1936,7 +1938,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 
 	case *lnwire.UpdateFailHTLC:
 		idx := msg.ID
-		err := l.channel.ReceiveFailHTLC(idx, msg.Reason[:])
+		err := l.channel.ReceiveFailHTLC(idx, msg.Reason[:], msg.Marked)
 		if err != nil {
 			l.fail(LinkFailureError{code: ErrInvalidUpdate},
 				"unable to handle upstream fail HTLC: %v", err)
@@ -2928,7 +2930,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 
 			preimage := invoice.Terms.PaymentPreimage
 			err = l.channel.SettleHTLC(
-				preimage, pd.HtlcIndex, pd.SourceRef, nil, nil,
+				preimage, pd.HtlcIndex, pd.SourceRef, nil, nil, pd.Marked,
 			)
 			if err != nil {
 				l.fail(LinkFailureError{code: ErrInternalError},
@@ -3188,7 +3190,7 @@ func (l *channelLink) sendHTLCError(htlcIndex uint64, failure lnwire.FailureMess
 		return
 	}
 
-	err = l.channel.FailHTLC(htlcIndex, reason, sourceRef, nil, nil)
+	err = l.channel.FailHTLC(htlcIndex, reason, sourceRef, nil, nil, marked)
 	if err != nil {
 		log.Errorf("unable cancel htlc: %v", err)
 		return
@@ -3208,7 +3210,7 @@ func (l *channelLink) sendMalformedHTLCError(htlcIndex uint64,
 	code lnwire.FailCode, onionBlob []byte, sourceRef *channeldb.AddRef, marked uint32) {
 
 	shaOnionBlob := sha256.Sum256(onionBlob)
-	err := l.channel.MalformedFailHTLC(htlcIndex, code, shaOnionBlob, sourceRef)
+	err := l.channel.MalformedFailHTLC(htlcIndex, code, shaOnionBlob, sourceRef, marked)
 	if err != nil {
 		log.Errorf("unable cancel htlc: %v", err)
 		return
