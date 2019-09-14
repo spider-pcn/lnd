@@ -441,6 +441,7 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 
 	select {
 	case e := <-payment.err:
+		log.Errorf("getting error in sendHTLC when returning: %v", e)
 		err = e
 	case <-s.quit:
 		return zeroPreimage, ErrSwitchExiting, marked
@@ -448,6 +449,7 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 
 	select {
 	case p := <-payment.preimage:
+		log.Errorf("got preimage in sendHTLC when returning: %v", p)
 		preimage = p
 	case <-s.quit:
 		return zeroPreimage, ErrSwitchExiting, marked
@@ -455,6 +457,7 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID,
 
 	select {
 	case m := <-payment.marked:
+		log.Errorf("got marked value in sendHTLC when returning: %v", m)
 		marked = m
 	case <-s.quit:
 		return zeroPreimage, ErrSwitchExiting, marked
