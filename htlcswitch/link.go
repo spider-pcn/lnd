@@ -1338,8 +1338,8 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			return
 		}
 
-		l.errorf("Getting update htlc, before checking queue delay with marked: %v, packet is %v",
-			htlc.Marked, pkt.marked)
+		l.errorf("Getting update htlc, before checking queue delay with marked: %v, packet is %v, threshold is %v",
+			htlc.Marked, pkt.marked, time.Duration(QUEUE_THRESHOLD)*time.Millisecond)
 
 		// mark the packet if the queueing delay is too long
 		_, ok := pkt.htlc.(*lnwire.UpdateAddHTLC)
@@ -1349,7 +1349,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 			diff := serviceTime.Sub(arrivalTime)
 
 			l.errorf("queueing delay experienced when reprocessing %v", diff)
-			if diff > DefaultQueueDelayThreshold {
+			if diff > time.Duration(QUEUE_THRESHOLD)*time.Millisecond {
 				pkt.marked = 1
 				pkt.htlc.(*lnwire.UpdateAddHTLC).Marked = 1
 			}
