@@ -416,7 +416,7 @@ func (p *paymentSession) RequestKShortestPaths(payment *LightningPayment,
 	paths, err := findSpiderKShortestPaths(nil, p.mc.graph, p.additionalEdges,
 		p.mc.selfNode, payment.Target, payment.Amount, K)
 	if err != nil {
-		log.Warnf("only found %d paths", len(paths))
+		log.Errorf("only found %d paths", len(paths))
 		if len(paths) == 0 {
 			return nil, err
 		}
@@ -434,7 +434,7 @@ func (p *paymentSession) RequestKShortestPaths(payment *LightningPayment,
 		if err != nil {
 			// TODO(roasbeef): return which edge/vertex didn't work
 			// out
-			log.Warnf("one route failed in k shortest paths")
+			log.Errorf("one route failed in k shortest paths")
 			return nil, err
 		}
 		routes = append(routes, route)

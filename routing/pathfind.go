@@ -773,7 +773,7 @@ func findSpiderKShortestPaths(tx *bolt.Tx, graph *channeldb.ChannelGraph,
 		// add this path to set of paths and mark the edges as to be ignored in the next search
 		// for the shortest path
 		allPaths = append(allPaths, thisPath)
-		for _, c := range thisPath {
+		for _, c := range thisPath[1 : len(thisPath)-1] {
 			edgesToIgnore[c.ChannelID] = true
 		}
 	}

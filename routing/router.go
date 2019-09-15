@@ -2006,6 +2006,7 @@ type SpiderRouteInfo struct {
 	statsMutex    *sync.Mutex
 	dataMutex     *sync.Mutex
 	waitTime      float64
+	pathId        int
 }
 
 // startLPRoute handles a path.
@@ -2147,7 +2148,9 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 				dataMutex:  &sync.Mutex{},
 				statsMutex: &sync.Mutex{},
 				rate:       0,
+				pathId:     len(paths),
 			}
+			log.Errorf("initializing a new path to %v", dest)
 			paths = append(paths, path)
 		}
 	}
@@ -2162,7 +2165,7 @@ func (r *ChannelRouter) handleDCTCPPaymentToDest(dest Vertex, payment SpiderPaym
 			if pathInfo.inFlight+tempPaymentAmount <= int(pathInfo.window) {
 				// update inflight
 				pathInfo.inFlight = pathInfo.inFlight + tempPaymentAmount
-				log.Errorf("ALPHA: %f, BETA: %f, initiating  a new payment: %f inflight: %f, window : %f",
+				log.Errorf("ALPHA: %f, BETA: %f, initiating  a new payment: %f inflight: %f, window : %f, path: %v",
 					ALPHA, BETA,
 					payment.payment.Amount, pathInfo.inFlight, pathInfo.window)
 				pathInfo.dataMutex.Unlock()
@@ -2274,8 +2277,8 @@ func (r *ChannelRouter) sendDCTCPPaymentOnPath(pathInfo *SpiderRouteInfo, paymen
 		log.Errorf("incrementing window by %f", ALPHA/sumWindows)
 	}
 
-	log.Errorf("ALPHA: %f, BETA: %f, finished a payment : %f inflight: %f, window : %f", ALPHA, BETA, payment.payment.Amount,
-		pathInfo.inFlight, pathInfo.window)
+	log.Errorf("ALPHA: %f, BETA: %f, finished a payment : %f inflight: %f, window : %f, pathId: %v", ALPHA, BETA, payment.payment.Amount,
+		pathInfo.inFlight, pathInfo.window, pathInfo.pathId)
 
 	// send out more txns on this route if possible
 	for q.Length() > 0 {
